@@ -374,18 +374,6 @@ function groupTable(titleTxt, colName, rows, filterKey){
   </tbody></table></div></div>`;
 }
 function openGroup(key, val){ S.filters = { q:"", region:"", store:"", status:"" }; S.filters[key] = val; go("employees"); }
-function trend(){
-  const weeks = S.weeks.slice(-12);
-  if (weeks.length < 2) return `<div class="card pad"><h3>Week by week</h3><p class="note">The trend appears after two weekly uploads${weeks.length ? ` (saved so far: ${esc(weeks[0].label)})` : ""}.</p></div>`;
-  const W = 560, H = 210, P = { l:36, r:12, t:12, b:34 };
-  const max = Math.max(1, ...weeks.flatMap(w => [w.expired, w.due, w.missing]));
-  const x = i => P.l + i * (W - P.l - P.r) / (weeks.length - 1), y = v => P.t + (H - P.t - P.b) * (1 - v / max);
-  const line = (k, col) => `<polyline fill="none" stroke="${col}" stroke-width="3" stroke-linejoin="round" points="${weeks.map((w,i) => `${x(i)},${y(w[k])}`).join(" ")}"/>` + weeks.map((w,i) => `<circle cx="${x(i)}" cy="${y(w[k])}" r="3.5" fill="${col}"><title>${esc(w.label)}: ${w[k]}</title></circle>`).join("");
-  const grid = [0, .5, 1].map(f => `<line x1="${P.l}" x2="${W-P.r}" y1="${y(max*f)}" y2="${y(max*f)}" stroke="#EFE5D8"/><text x="${P.l-6}" y="${y(max*f)+4}" text-anchor="end" font-size="11" fill="#6E655B">${Math.round(max*f)}</text>`).join("");
-  const labels = weeks.map((w,i) => `<text x="${x(i)}" y="${H-12}" text-anchor="middle" font-size="11" fill="#6E655B">${esc(w.label.replace(/^week\s*/i,"W").replace(/\s+\d{4}$/,""))}</text>`).join("");
-  return `<div class="card pad trend"><h3>Week by week</h3><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Expired, due and missing-date counts by week">${grid}${line("expired","#C2412D")}${line("due","#A9875F")}${line("missing","#9b8f80")}${labels}</svg>
-  <div class="legend" style="margin-top:6px"><span><span class="dot" style="background:#C2412D"></span> Expired</span><span><span class="dot" style="background:#A9875F"></span> Due ≤ 30 days</span><span><span class="dot" style="background:#9b8f80"></span> No date</span></div></div>`;
-}
 function dashboard(){
   const c = counts(S.emps);
   const kpi = (st, lbl, v, sub, col) => `<div class="card kpi" onclick="quick('${st}')"><div class="l"><span class="dot" style="background:${col}"></span>${lbl}</div><div class="v mono" style="color:${col}">${v.toLocaleString()}</div><div class="s">${sub}</div></div>`;
@@ -398,7 +386,7 @@ function dashboard(){
     ${kpi("miss", "Date missing", c.miss, "Check Baladiya system", "#6E655B")}
     ${kpi("ok", "OK", c.ok, "More than 30 days", "var(--teal-d)")}
   </div>
-  <div class="grid2">${groupTable("By region", "Region", groupRows(e => e.region), "region")}${trend()}</div>
+  ${groupTable("By region", "Region", groupRows(e => e.region), "region")}
   <div class="section">${groupTable("By store", "Store", groupRows(e => e.store), "store")}</div>
   <div class="card section"><div class="pad" style="padding-bottom:6px"><h3>Needs action soonest</h3></div>
     ${next.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">AM remarks</th></tr></thead><tbody>
@@ -559,13 +547,6 @@ function analyse(rows){
   }
   return { exactDup, conflicts };
 }
-function weekLabelFor(fileName){
-  const wk = (fileName.match(/week[\s_\-]*(\d{1,2})/i) || [])[1];
-  if (wk) return `Week ${wk} ${new Date().getFullYear()}`;
-  const d = new Date(); const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day);
-  return `Week ${Math.ceil(((t - Date.UTC(t.getUTCFullYear(),0,1)) / 86400000 + 1) / 7)} ${t.getUTCFullYear()}`;
-}
-
 // ---------- import: screen ----------
 function importView(){
   if (S.imp) return S.imp.result ? importResult() : importPreview();
@@ -584,12 +565,12 @@ function importView(){
     </div>
   </div>
   ${isAdmin() ? `<div class="card pad section" style="border:1px solid #F0C9BF"><h3>Delete all data</h3>
-    <p class="note">Removes every employee (${S.emps.length.toLocaleString()}) and the week-by-week history, so you can start again with a fresh upload. Logins are kept. This can't be undone.</p>
-    <button class="btn danger" onclick="wipeAll()" ${S.emps.length || S.weeks.length ? "" : "disabled"}>Delete all uploaded data</button></div>` : ""}`;
+    <p class="note">Removes every employee (${S.emps.length.toLocaleString()}) so you can start again with a fresh upload. Logins are kept. This can't be undone.</p>
+    <button class="btn danger" onclick="wipeAll()" ${S.emps.length ? "" : "disabled"}>Delete all uploaded data</button></div>` : ""}`;
 }
 function wipeAll(){
   modal(`<h3>Delete all uploaded data?</h3>
-    <p class="note">This permanently removes <b>${S.emps.length.toLocaleString()} employees</b> and <b>${S.weeks.length} saved week${S.weeks.length===1?"":"s"}</b> for everyone. Tip: use <b>Download current list</b> first if you want a copy.</p>
+    <p class="note">This permanently removes <b>${S.emps.length.toLocaleString()} employees</b> for everyone. Tip: use <b>Download current list</b> first if you want a copy.</p>
     <label>Type DELETE to confirm</label><input type="text" id="wipeTxt" autocomplete="off" oninput="$('#wipeBtn').disabled=this.value.trim()!=='DELETE'">
     <div class="err" id="wipeErr"></div>
     <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="wipeBtn" disabled>Delete everything</button></div>`);
@@ -621,7 +602,7 @@ async function handleFile(file){
   try {
     const { rows, sheets } = await readWorkbook(file);
     if (!rows.length) throw new Error("No employee rows found. The sheet needs headings like Employee ID, Name and Store — use the Trackit template.");
-    S.imp = { file: file.name, rows, sheets, ...analyse(rows), week: weekLabelFor(file.name), result: null };
+    S.imp = { file: file.name, rows, sheets, ...analyse(rows), result: null };
     render();
   } catch (e) { $("#impOut").innerHTML = `<div class="errlist" style="margin-top:14px">${esc(e.message || e)}</div>`; $("#file").value = ""; }
 }
@@ -650,8 +631,6 @@ function importPreview(){
     ${odd.length ? `<div class="warnbox section">${odd.length} rows have a region that isn't one of ${REGIONS.join(", ")}: ${[...new Set(odd.map(r => r.region))].map(esc).join(", ")}</div>` : ""}
   </div>` : ""}
   <div class="card pad section"><h3>Save</h3>
-    <label>Save this upload as</label><input type="text" id="weekLabel" value="${esc(I.week)}" style="max-width:320px">
-    <p class="note">This week's totals are kept for the week-by-week chart.</p>
     <div class="actions" style="justify-content:flex-start"><button class="btn" id="impBtn" onclick="runImport()">Save ${new Set(I.rows.map(r => r.employee_id)).size} employees</button></div>
     <div id="impProg"></div>
   </div>`;
@@ -662,12 +641,10 @@ async function runImport(){
     const last = new Map(); I.rows.forEach(r => last.set(r.employee_id || r.where, r));
     const rows = [...last.values()].map(r => ({ row: r.where, employee_id: r.employee_id, name: r.name, store: r.store, region: r.region, iqama: r.iqama,
       nationality: r.nationality, mobile: r.mobile, expiry: r.expiry, expiry_note: r.expiry_note, remarks: r.remarks }));
-    const label = ($("#weekLabel")?.value || I.week).trim();
-    const tot = { added:0, updated:0, skipped:0, errors:[], week: label };
+    const tot = { added:0, updated:0, skipped:0, errors:[] };
     for (let i = 0; i < rows.length; i += 500) {
       $("#impProg").innerHTML = `<p class="note">Saving ${Math.min(i + 500, rows.length)} of ${rows.length}…</p>`;
-      const isLast = i + 500 >= rows.length;
-      const { data, error } = await sb.rpc("trackit_import_v3", { rows: rows.slice(i, i + 500), week_label: isLast ? label : null });
+      const { data, error } = await sb.rpc("trackit_import_v3", { rows: rows.slice(i, i + 500), week_label: null });
       if (error) throw error;
       tot.added += data.added; tot.updated += data.updated; tot.skipped += data.skipped; tot.errors.push(...data.errors);
     }
@@ -676,7 +653,7 @@ async function runImport(){
 }
 function importResult(){
   const t = S.imp.result;
-  return header("Import finished", `${esc(S.imp.file)} · saved as ${esc(t.week)}`, `<button class="btn" onclick="S.imp=null;go('dashboard')">Go to dashboard</button>`) + `
+  return header("Import finished", esc(S.imp.file), `<button class="btn" onclick="S.imp=null;go('dashboard')">Go to dashboard</button>`) + `
   <div class="card pad"><div class="summary"><div><b style="color:var(--teal-d)">${t.added}</b>added</div><div><b style="color:var(--tan-d)">${t.updated}</b>updated</div><div><b>${t.skipped}</b>unchanged</div><div><b style="color:${t.errors.length?"var(--red)":"var(--muted)"}">${t.errors.length}</b>problems</div></div>
   ${t.errors.length ? `<div class="errlist">${t.errors.slice(0,300).map(e => `<div>${esc(e.row)}: ${esc(e.msg)}</div>`).join("")}</div>` : `<div class="okbox">Everything saved. Dashboards update for everyone automatically.</div>`}
   <div class="actions" style="justify-content:flex-start"><button class="btn ghost" onclick="S.imp=null;render()">Upload another file</button></div></div>`;
