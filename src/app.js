@@ -340,7 +340,24 @@ function importView(){
       <label class="drop" id="drop"><input type="file" id="file" accept=".xlsx,.xls,.csv" class="hidden"><b>Choose the file</b><div class="note">or drag it here</div></label>
       <div id="impOut"></div>
     </div>
-  </div>`;
+  </div>
+  ${isAdmin() ? `<div class="card pad section" style="border:1px solid #F0C9BF"><h3>Delete all data</h3>
+    <p class="note">Removes every employee (${S.emps.length.toLocaleString()}) and the week-by-week history, so you can start again with a fresh upload. Logins are kept. This can't be undone.</p>
+    <button class="btn danger" onclick="wipeAll()" ${S.emps.length || S.weeks.length ? "" : "disabled"}>Delete all uploaded data</button></div>` : ""}`;
+}
+function wipeAll(){
+  modal(`<h3>Delete all uploaded data?</h3>
+    <p class="note">This permanently removes <b>${S.emps.length.toLocaleString()} employees</b> and <b>${S.weeks.length} saved week${S.weeks.length===1?"":"s"}</b> for everyone. Tip: use <b>Download current list</b> first if you want a copy.</p>
+    <label>Type DELETE to confirm</label><input type="text" id="wipeTxt" autocomplete="off" oninput="$('#wipeBtn').disabled=this.value.trim()!=='DELETE'">
+    <div class="err" id="wipeErr"></div>
+    <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="wipeBtn" disabled>Delete everything</button></div>`);
+  $("#wipeBtn").onclick = async () => {
+    $("#wipeBtn").disabled = true; $("#wipeErr").textContent = "";
+    const a = await sb.from("trackit_staff").delete().not("id", "is", null);
+    const b = a.error ? a : await sb.from("trackit_week_totals").delete().not("id", "is", null);
+    if (a.error || b.error) { $("#wipeErr").textContent = (a.error || b.error).message; $("#wipeBtn").disabled = false; return; }
+    closeModal(); S.imp = null; await loadAll(); render(); toast("All uploaded data deleted");
+  };
 }
 function downloadTemplate(withData){
   const data = withData ? S.emps.map(e => { const r = empRow(e); r[6] = e.expiry ? new Date(e.expiry + "T00:00:00") : ""; return r; }) : [];
