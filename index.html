@@ -135,6 +135,7 @@ code{background:#EFE5D8;padding:1px 6px;border-radius:6px;font-size:12.5px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;z-index:60;font-weight:600;box-shadow:var(--shadow)}
 .mobile-top,.bottom-nav{display:none}
 .sm-only{display:none}
+.sub.sm-only{display:none}
 td.mono{white-space:nowrap}
 @media (max-width:900px){
   #app{grid-template-columns:1fr}
@@ -157,6 +158,7 @@ td.mono{white-space:nowrap}
   .filters > *{max-width:none}
   .hm{display:none}
   .sm-only{display:inline}
+  .sub.sm-only{display:block}
   td,th{padding:10px 10px}
   .chat{height:calc(100vh - 290px);min-height:360px}
   .pill{font-size:11px;padding:3px 8px}
@@ -570,9 +572,9 @@ function managers(){
   const cnt = id => S.emps.filter(e => e.manager_id === id).length;
   const issues = id => S.emps.filter(e => e.manager_id === id && statusOf(e.expiry) !== "ok").length;
   return header("Area Managers", "Create logins and see each manager's workload", `<button class="btn" onclick="addMgr()">+ Add area manager</button>`) + `
-  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Employees</th><th>Expired + due</th><th></th></tr></thead><tbody>
-  ${S.managers.map(m => `<tr><td><b>${esc(m.full_name || "—")}</b></td><td>${esc(m.email)}</td><td>${m.role==="admin"?"Admin":"Area Manager"}</td><td class="mono">${cnt(m.id)}</td><td class="mono" style="color:${issues(m.id)?"var(--red)":"var(--muted)"}">${issues(m.id)}</td>
-  <td style="white-space:nowrap;text-align:right"><button class="btn sm ghost" onclick="resetPw('${m.id}')">Reset password</button> ${m.id!==S.me.id?`<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delMgr('${m.id}')">${ICON.trash}</button>`:""}</td></tr>`).join("")}
+  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th class="hm">Email</th><th class="hm">Role</th><th>Staff</th><th>Expired + due</th><th></th></tr></thead><tbody>
+  ${S.managers.map(m => `<tr><td><b>${esc(m.full_name || "—")}</b><div class="sub sm-only">${esc(m.email)}${m.role==="admin"?" · Admin":""}</div></td><td class="hm">${esc(m.email)}</td><td class="hm">${m.role==="admin"?"Admin":"Area Manager"}</td><td class="mono">${cnt(m.id)}</td><td class="mono" style="color:${issues(m.id)?"var(--red)":"var(--muted)"}">${issues(m.id)}</td>
+  <td style="white-space:nowrap;text-align:right"><button class="btn sm ghost" onclick="resetPw('${m.id}')"><span class="hm">Reset password</span><span class="sm-only">Reset</span></button> ${m.id!==S.me.id?`<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delMgr('${m.id}')">${ICON.trash}</button>`:""}</td></tr>`).join("")}
   </tbody></table></div></div>
   <p class="note" style="margin-top:12px">Area managers sign in with the email and password you set here. Share the password with them privately; they can't see other managers' staff.</p>`;
 }

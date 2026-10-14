@@ -57,20 +57,22 @@ Deno.serve(async (req) => {
       return json({ error: "The AI key hasn't been added yet. Ask the admin to add OPENROUTER_API_KEY." + seen }, 503);
     }
     const auth = req.headers.get("Authorization") || "";
-    // Use the caller's own login so database security rules decide what the AI can see
-    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: auth } }, auth: { persistSession: false },
-    });
-    const { data: u } = await sb.auth.getUser(auth.replace("Bearer ", ""));
+    const service = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+    const { data: u } = await service.auth.getUser(auth.replace("Bearer ", ""));
     if (!u?.user) return json({ error: "Not signed in" }, 401);
+    const { data: me } = await service.from("trackit_profiles").select("id,role").eq("id", u.user.id).maybeSingle();
+    if (!me) return json({ error: "Your login hasn't been added to Trackit yet." }, 403);
     const { question, history } = await req.json();
     if (!question || String(question).length > 600) return json({ error: "Please ask a shorter question." }, 400);
 
     const rows: any[] = [];
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await sb.from("trackit_employees")
+      // Same rule as the database: admins see everyone, area managers only their own employees
+      let q = service.from("trackit_employees")
         .select("name,store,expiry,manager:trackit_profiles(full_name,email)")
         .order("expiry").range(from, from + 999);
+      if (me.role !== "admin") q = q.eq("manager_id", me.id);
+      const { data, error } = await q;
       if (error) return json({ error: error.message }, 400);
       rows.push(...(data || []));
       if (!data || data.length < 1000) break;
