@@ -1,0 +1,34 @@
+.kpis.k5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.p-miss{background:#ECE6DE;color:#5C554C}
+.prog{display:inline-flex;gap:4px;align-items:center}
+.prog i{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:700;background:#EFE5D8;color:#9b8f80}
+.prog i.on{background:var(--teal);color:#0f3b30}
+.prog i.na{background:#F3EEE7;color:#b9ad9e;text-decoration:line-through}
+.funnel{display:flex;flex-direction:column;gap:10px}
+.frow{display:grid;grid-template-columns:150px 1fr 54px;gap:12px;align-items:center;font-size:14px}
+.frow .track{height:14px;border-radius:999px;background:#efe5d8;overflow:hidden}
+.frow .track span{display:block;height:100%;border-radius:999px}
+.frow b{text-align:right;font-variant-numeric:tabular-nums}
+.trend svg{width:100%;height:auto;display:block}
+.seg{display:inline-flex;background:#EFE5D8;border-radius:11px;padding:3px;gap:3px;flex-wrap:wrap}
+.seg button{border:0;background:transparent;border-radius:8px;padding:8px 12px;font-weight:600;cursor:pointer;color:var(--muted);font-size:13px}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.seg button.on.done{background:var(--teal);color:#0f3b30}
+.steprow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #EFE5D8;flex-wrap:wrap}
+.steprow:last-child{border-bottom:0}
+.modal.wide{max-width:640px}
+.matchtbl td{padding:8px 10px}
+.matchtbl select{min-height:38px;padding:7px 10px}
+.okbox{background:var(--ok-bg);color:#1f5e4e;border-radius:12px;padding:12px 14px;font-size:13px}
+.warnbox{background:var(--amber-bg);color:#6e4310;border-radius:12px;padding:12px 14px;font-size:13px}
+.section{margin-top:16px}
+.contact a{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;color:var(--muted);text-decoration:none}
+.contact a:hover{background:#f1e7da;color:var(--ink)}
+.contact svg{width:17px;height:17px}
+@media (max-width:900px){
+  .kpis.k5{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .frow{grid-template-columns:110px 1fr 40px;font-size:13px}
+  .modal.wide{max-width:100%}
+  div.sm-only{display:block}
+  td.mono{white-space:normal}
+}
