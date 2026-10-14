@@ -8,11 +8,12 @@ const cors = {
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 
 const PREFERRED = [
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "deepseek/deepseek-chat-v3-0324:free",
-  "google/gemma-3-27b-it:free",
-  "mistralai/mistral-small-3.2-24b-instruct:free",
-  "qwen/qwen3-235b-a22b:free",
+  "openrouter/free",
+  "google/gemma-4-31b-it:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "thinkingmachines/inkling:free",
+  "nvidia/nemotron-3.5-lightning:free",
 ];
 let cachedFree: string[] | null = null;
 async function freeModels(): Promise<string[]> {
@@ -21,9 +22,9 @@ async function freeModels(): Promise<string[]> {
     const r = await fetch("https://openrouter.ai/api/v1/models");
     const j = await r.json();
     const ids: string[] = (j.data || []).map((m: any) => m.id).filter((id: string) => id.endsWith(":free"));
-    const pref = PREFERRED.filter((p) => ids.includes(p));
-    const rest = ids.filter((id) => !pref.includes(id) && /instruct|chat|gemma|llama|mistral|qwen|deepseek/i.test(id));
-    cachedFree = [...pref, ...rest].slice(0, 6);
+    const pref = PREFERRED.filter((p) => p === "openrouter/free" || ids.includes(p));
+    const rest = ids.filter((id) => !pref.includes(id) && !/safety|code|omni|nano|2\.6b/i.test(id));
+    cachedFree = [...pref, ...rest].slice(0, 8);
   } catch { cachedFree = PREFERRED; }
   return cachedFree.length ? cachedFree : PREFERRED;
 }
@@ -100,7 +101,8 @@ Deno.serve(async (req) => {
       { role: "user", content: String(question) },
     ];
 
-    let lastErr = "";
+    const fails: string[] = [];
+    let dailyCap = false;
     for (const model of await freeModels()) {
       const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -111,13 +113,18 @@ Deno.serve(async (req) => {
         const j = await r.json();
         const answer = j.choices?.[0]?.message?.content?.trim();
         if (answer) return json({ answer, model });
-        lastErr = "empty answer";
-      } else {
-        lastErr = `${r.status}`;
-        if (r.status === 401) return json({ error: "The OpenRouter key was rejected. Ask the admin to check it." }, 502);
+        fails.push(`${model}: empty answer`);
+        continue;
       }
+      const body = await r.text();
+      if (r.status === 401) return json({ error: "The OpenRouter key was rejected. Ask the admin to check it." }, 502);
+      if (r.status === 402) return json({ error: "OpenRouter says this account needs credit for this request (" + body.slice(0, 160) + ")" }, 502);
+      if (r.status === 429 && /per-day|per day|daily/i.test(body)) dailyCap = true;
+      fails.push(`${model}: ${r.status}`);
+      console.log("openrouter fail", model, r.status, body.slice(0, 300));
     }
-    return json({ error: lastErr === "429" ? "The free AI limit for today has been reached. Try again later." : "The AI is busy right now. Please try again in a minute." }, 503);
+    if (dailyCap) return json({ error: "The free AI limit for today has been reached for this OpenRouter account. It resets daily." }, 503);
+    return json({ error: "The free AI models are busy right now. Please try again in a minute. (" + fails.join("; ") + ")" }, 503);
   } catch (e) {
     return json({ error: String((e as any)?.message || e) }, 500);
   }
