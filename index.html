@@ -554,6 +554,7 @@ function afterChat(){
   box.innerHTML = S.chat.length ? S.chat.map(m => `<div class="msg ${m.role==="user"?"u":"a"}">${m.role==="user" ? esc(m.content) : md(m.content)}</div>`).join("")
     : `<div class="empty">Hi ${esc((S.me.full_name||"").split(" ")[0] || "")}! Ask me who needs a Baladiya renewal, which stores are behind, or for a renewal plan.</div>`;
   if (S.busy) box.innerHTML += `<div class="typing">Thinking…</div>`;
+  const chips = $("#chips"); if (chips) chips.style.display = S.chat.length ? "none" : "";
   box.scrollTop = box.scrollHeight;
 }
 async function ask(q){
@@ -572,9 +573,9 @@ function managers(){
   const cnt = id => S.emps.filter(e => e.manager_id === id).length;
   const issues = id => S.emps.filter(e => e.manager_id === id && statusOf(e.expiry) !== "ok").length;
   return header("Area Managers", "Create logins and see each manager's workload", `<button class="btn" onclick="addMgr()">+ Add area manager</button>`) + `
-  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th class="hm">Email</th><th class="hm">Role</th><th>Staff</th><th>Expired + due</th><th></th></tr></thead><tbody>
+  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th class="hm">Email</th><th class="hm">Role</th><th>Staff</th><th><span class="hm">Expired + due</span><span class="sm-only">Exp + due</span></th><th></th></tr></thead><tbody>
   ${S.managers.map(m => `<tr><td><b>${esc(m.full_name || "—")}</b><div class="sub sm-only">${esc(m.email)}${m.role==="admin"?" · Admin":""}</div></td><td class="hm">${esc(m.email)}</td><td class="hm">${m.role==="admin"?"Admin":"Area Manager"}</td><td class="mono">${cnt(m.id)}</td><td class="mono" style="color:${issues(m.id)?"var(--red)":"var(--muted)"}">${issues(m.id)}</td>
-  <td style="white-space:nowrap;text-align:right"><button class="btn sm ghost" onclick="resetPw('${m.id}')"><span class="hm">Reset password</span><span class="sm-only">Reset</span></button> ${m.id!==S.me.id?`<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delMgr('${m.id}')">${ICON.trash}</button>`:""}</td></tr>`).join("")}
+  <td style="white-space:nowrap;text-align:right"><button class="btn sm ghost" onclick="resetPw('${m.id}')"><span class="hm">Reset password</span><span class="sm-only" title="Reset password" aria-label="Reset password"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:block"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2"/></svg></span></button> ${m.id!==S.me.id?`<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delMgr('${m.id}')">${ICON.trash}</button>`:""}</td></tr>`).join("")}
   </tbody></table></div></div>
   <p class="note" style="margin-top:12px">Area managers sign in with the email and password you set here. Share the password with them privately; they can't see other managers' staff.</p>`;
 }
