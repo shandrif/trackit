@@ -67,9 +67,12 @@ nav > .ind{background:var(--tan);box-shadow:0 6px 18px -6px rgba(212,179,139,.6)
 .btn:active:not(:disabled){transform:scale(.97)}
 .btn.ghost{background:rgba(255,255,255,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .btn.arrow::after{content:"→";display:inline-block;width:0;opacity:0;transform:translateX(-4px);transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
-.ripple{position:absolute;border-radius:50%;pointer-events:none;background:currentColor;opacity:.18;transform:scale(.2);z-index:2;
-  transition:transform 400ms var(--ease-out),opacity 400ms var(--ease-out)}
+.ripple{position:absolute;border-radius:50%;pointer-events:none;z-index:2;transform:scale(.15);opacity:.9;
+  background:radial-gradient(circle,var(--rc,rgba(255,255,255,.55)) 0 30%,transparent 64%);
+  transition:transform 600ms var(--ease-out),opacity 600ms cubic-bezier(.5,0,.75,0)}
+.ripple.ring{background:none;box-shadow:0 0 0 2px var(--rc,rgba(255,255,255,.6)) inset;transition-duration:700ms;transition-delay:50ms}
 .ripple.go{transform:scale(1);opacity:0}
+.kpi,.tabs button,.seg button,nav button,.bottom-nav button{overflow:hidden}
 .icon-btn,.contact a{transition:transform 150ms var(--ease-out),background-color 150ms var(--ease-out),color 150ms var(--ease-out)}
 .icon-btn:active,.contact a:active{transform:scale(.92)}
 .chips button{transition:transform 160ms var(--ease-out),border-color 150ms var(--ease-out),background-color 150ms var(--ease-out)}

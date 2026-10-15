@@ -109,15 +109,21 @@
   window.render = function(fromLive){ const r = origRender.apply(this, arguments); after(fromLive); return r; };
   window.addEventListener("resize", () => { for (const k in last) delete last[k]; indicators(); });
 
-  // ripple on buttons only (not on nav/tabs, which are used constantly)
+  // water-drop ripple: a soft splash plus an expanding ring from the exact click point
   document.addEventListener("pointerdown", e => {
     if (calm) return;
-    const el = e.target.closest(".btn");
+    const el = e.target.closest(".btn, nav button, .bottom-nav button, .tabs button, .seg button, .kpi, .chips button");
     if (!el || el.disabled) return;
-    const r = el.getBoundingClientRect(), size = Math.max(r.width, r.height) * 2;
-    const s = document.createElement("span"); s.className = "ripple";
-    Object.assign(s.style, { width: size + "px", height: size + "px", left: (e.clientX - r.left - size / 2) + "px", top: (e.clientY - r.top - size / 2) + "px" });
-    el.appendChild(s); s.offsetWidth; s.classList.add("go"); setTimeout(() => s.remove(), 450);
+    const r = el.getBoundingClientRect(), size = Math.min(Math.max(r.width, r.height) * 1.6, 260);
+    const dark = el.matches(".btn:not(.ghost):not(.tan), nav button, .bottom-nav button");
+    const color = dark ? "rgba(245,237,227,.55)" : "rgba(169,135,95,.32)";
+    if (getComputedStyle(el).position === "static") el.style.position = "relative";
+    ["", "ring"].forEach(kind => {
+      const s = document.createElement("span"); s.className = "ripple" + (kind ? " " + kind : "");
+      Object.assign(s.style, { width: size + "px", height: size + "px", left: (e.clientX - r.left - size / 2) + "px", top: (e.clientY - r.top - size / 2) + "px" });
+      s.style.setProperty("--rc", color);
+      el.appendChild(s); s.offsetWidth; s.classList.add("go"); setTimeout(() => s.remove(), 750);
+    });
   });
 
   // soft spotlight following the mouse on KPI cards (mouse users only)
