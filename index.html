@@ -482,9 +482,19 @@ const dateCell = e => e.expiry ? `${fmtDate(e.expiry)}<div class="sub">${relDays
 const isAdmin = () => S.me?.role === "admin";
 function toast(msg){ const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 function phoneIntl(m){ let d = String(m||"").replace(/\D/g,""); if (!d) return ""; if (d.startsWith("00")) d = d.slice(2); if (d.startsWith("0")) d = d.slice(1); if (d.length === 9 && d.startsWith("5")) d = "966" + d; return d; }
+function waText(e){
+  const s = statusOf(e); if (s === "ok") return "";
+  const first = String(e.name || "").trim().split(/\s+/)[0] || "";
+  const hi = first ? `Hi ${first[0].toUpperCase()}${first.slice(1).toLowerCase()},` : "Hi,";
+  const n = e.expiry ? daysLeft(e.expiry) : 0;
+  const msg = s === "exp" ? `${hi} your Baladiya card expired on ${fmtDate(e.expiry)}. Please renew it as soon as possible and share the new card with your area manager. Thank you.`
+    : s === "due" ? `${hi} your Baladiya card expires on ${fmtDate(e.expiry)} (${n === 0 ? "today" : `in ${n} day${n === 1 ? "" : "s"}`}). Please book your renewal now. Thank you.`
+    : `${hi} we don't have your Baladiya card expiry date. Please send a photo of your Baladiya card to your area manager. Thank you.`;
+  return "?text=" + encodeURIComponent(msg);
+}
 function contact(e){
   const p = phoneIntl(e.mobile); if (!p) return "";
-  return `<span class="contact"><a href="tel:+${p}" title="Call" aria-label="Call">${ICON.phone}</a><a href="https://wa.me/${p}" target="_blank" rel="noopener" title="WhatsApp" aria-label="WhatsApp">${ICON.wa}</a></span>`;
+  return `<span class="contact"><a href="tel:+${p}" title="Call" aria-label="Call">${ICON.phone}</a><a href="https://wa.me/${p}${waText(e)}" target="_blank" rel="noopener" title="${statusOf(e) === "ok" ? "WhatsApp" : "WhatsApp — reminder ready to send"}" aria-label="WhatsApp">${ICON.wa}</a></span>`;
 }
 const ICON = {
   dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
