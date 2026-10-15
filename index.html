@@ -328,7 +328,11 @@ async function loadAll(){
   const [emps, weeks] = await Promise.all([pageAll("trackit_staff", "expiry"), pageAll("trackit_week_totals", "created_at")]);
   S.emps = emps.sort((a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : 1);
   S.weeks = weeks;
-  if (isAdmin()) { const { data } = await sb.from("trackit_profiles").select("*").order("full_name"); S.profiles = data || []; }
+  if (isAdmin()) {
+    const [{ data }, { data: st }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
+      sb.from("trackit_settings").select("email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result").eq("id", 1).maybeSingle()]);
+    S.profiles = data || []; S.settings = st;
+  }
 }
 let reloadT = null;
 function subscribe(){
@@ -718,7 +722,58 @@ function loginsView(){
   <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th class="hm">Email</th><th>Role</th><th></th></tr></thead><tbody>
   ${S.profiles.map(p => `<tr><td><b>${esc(p.full_name || p.email)}</b><div class="sub sm-only">${esc(p.email)}</div></td><td class="hm">${esc(p.email)}</td><td>${p.role === "admin" ? "Admin" : "User"}</td>
     <td style="text-align:right;white-space:nowrap"><button class="btn sm ghost" onclick="resetPw('${p.id}')">${ICON.key}<span class="hm">Reset password</span></button>${p.id !== S.me.id ? `<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delLogin('${p.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
-  </tbody></table></div></div>`;
+  </tbody></table></div></div>
+  ${emailCard()}`;
+}
+const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const hourLabel = h => `${((h + 11) % 12) + 1}:00 ${h < 12 ? "AM" : "PM"}`;
+function emailCard(){
+  const st = S.settings; if (!st) return "";
+  const when = st.frequency === "weekly" ? `every ${DAYS[st.weekday]} at ${hourLabel(st.send_hour)}` : `every day at ${hourLabel(st.send_hour)}`;
+  return `<div class="card pad section"><h3>Email alerts</h3>
+    <p class="note">Sends a summary of everyone <b>expired</b> and <b>expiring within 30 days</b> (Riyadh time). No email is sent on days with nothing to report. Iqama and mobile numbers are never included.</p>
+    <form id="alertForm" onsubmit="event.preventDefault();saveAlerts()">
+      <div class="steprow"><span><b>Alerts</b> <span class="sub">${st.email_enabled ? `On — ${when}` : "Off"}</span></span>
+        <div class="seg"><button type="button" class="${!st.email_enabled ? "on" : ""}" onclick="pickAlert(this,false)">Off</button><button type="button" class="${st.email_enabled ? "on done" : ""}" onclick="pickAlert(this,true)">On</button></div></div>
+      <input type="hidden" name="email_enabled" value="${st.email_enabled ? "1" : ""}">
+      <label>Receivers <span class="sub">(one email per line — add or remove any time)</span></label>
+      <textarea name="recipients" rows="3" style="width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff" placeholder="name@halfm.sa">${esc((st.recipients || []).join("\n"))}</textarea>
+      <div class="row2"><div><label>How often</label><select name="frequency" onchange="$('#wdBox').style.visibility=this.value==='weekly'?'visible':'hidden'"><option value="daily" ${st.frequency==="daily"?"selected":""}>Every day</option><option value="weekly" ${st.frequency==="weekly"?"selected":""}>Once a week</option></select></div>
+      <div id="wdBox" style="visibility:${st.frequency==="weekly"?"visible":"hidden"}"><label>Day</label><select name="weekday">${DAYS.map((d,i) => `<option value="${i}" ${st.weekday===i?"selected":""}>${d}</option>`).join("")}</select></div></div>
+      <div class="row2"><div><label>Time (Riyadh)</label><select name="send_hour">${Array.from({length:24},(_,h) => `<option value="${h}" ${st.send_hour===h?"selected":""}>${hourLabel(h)}</option>`).join("")}</select></div><div></div></div>
+      <div class="row2"><div><label>Sender email <span class="sub">(the one verified in Brevo)</span></label><input type="email" name="sender_email" value="${esc(st.sender_email)}" placeholder="you@example.com"></div>
+      <div><label>Sender name</label><input type="text" name="sender_name" value="${esc(st.sender_name)}"></div></div>
+      ${st.last_result ? `<p class="note">Last: ${esc(st.last_result)}</p>` : ""}
+      <div class="err" id="alertErr"></div>
+      <div class="actions" style="justify-content:flex-start"><button class="btn" id="alertSave">Save</button><button type="button" class="btn ghost" id="alertTest" onclick="testAlert()">Send test email now</button></div>
+    </form></div>`;
+}
+function pickAlert(btn, on){ const seg = btn.parentElement; seg.querySelectorAll("button").forEach(b => b.classList.remove("on","done")); btn.classList.add("on"); if (on) btn.classList.add("done"); $("#alertForm [name=email_enabled]").value = on ? "1" : ""; }
+function readAlertForm(){
+  const fd = Object.fromEntries(new FormData($("#alertForm")));
+  const recipients = [...new Set(fd.recipients.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean))];
+  const bad = recipients.filter(x => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+  return { bad, row: { email_enabled: !!fd.email_enabled, recipients, frequency: fd.frequency, weekday: +fd.weekday, send_hour: +fd.send_hour,
+    sender_email: fd.sender_email.trim(), sender_name: fd.sender_name.trim() || "Trackit", updated_at: new Date().toISOString() } };
+}
+async function saveAlerts(quiet){
+  const { bad, row } = readAlertForm(); $("#alertErr").textContent = "";
+  if (bad.length) { $("#alertErr").textContent = "Not a valid email: " + bad.join(", "); return false; }
+  if (row.email_enabled && !row.recipients.length) { $("#alertErr").textContent = "Add at least one receiver email."; return false; }
+  if (row.email_enabled && !row.sender_email) { $("#alertErr").textContent = "Add the sender email you verified in Brevo."; return false; }
+  const { error } = await sb.from("trackit_settings").update(row).eq("id", 1);
+  if (error) { $("#alertErr").textContent = error.message; return false; }
+  Object.assign(S.settings, row); if (!quiet) { toast("Email alerts saved"); render(); }
+  return true;
+}
+async function testAlert(){
+  const b = $("#alertTest"); b.disabled = true; b.textContent = "Sending…";
+  if (!(await saveAlerts(true))) { b.disabled = false; b.textContent = "Send test email now"; return; }
+  const { data, error } = await sb.functions.invoke("trackit-email", { body: { mode: "test" } });
+  let msg = data?.error; if (!data?.ok && !msg && error?.context?.json) { try { msg = (await error.context.json()).error; } catch {} }
+  await loadAll(); render();
+  if (data?.ok) toast(`Test email sent to ${data.sent} receiver${data.sent === 1 ? "" : "s"}`);
+  else { const e = $("#alertErr"); if (e) e.textContent = msg || error?.message || "Couldn't send"; }
 }
 function addLogin(){
   modal(`<h3>Add user</h3><form id="lf">
