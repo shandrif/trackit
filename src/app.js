@@ -56,13 +56,14 @@ $("#loginForm").addEventListener("submit", async e => {
   if (error) $("#lerr").textContent = error.message === "Invalid login credentials" ? "Wrong email or password." : error.message;
 });
 async function signOut(){ if (S.channel) sb.removeChannel(S.channel); await sb.auth.signOut(); location.reload(); }
-sb.auth.onAuthStateChange((ev, session) => { setTimeout(() => { if (ev === "SIGNED_IN" && !S.me && !S.booting) boot(session); if (ev === "SIGNED_OUT") show("login"); }, 0); });
+sb.auth.onAuthStateChange((ev, session) => { setTimeout(() => { if (ev === "SIGNED_IN" && !S.me && !S.booting) boot(session); if (ev === "SIGNED_OUT") { if (S.me) location.reload(); else show("login"); } }, 0); });
 function show(which){ ["login","noaccess","shell"].forEach(id => $("#"+id).classList.toggle("hidden", id !== which)); }
 async function boot(session){ if (S.booting || S.me) return; S.booting = true; try { await bootInner(session); } finally { S.booting = false; } }
 async function bootInner(session){
   if (!session) { const { data } = await sb.auth.getSession(); session = data.session; }
   if (!session) return show("login");
-  const { data: me } = await sb.from("trackit_profiles").select("*").eq("id", session.user.id).maybeSingle();
+  const { data: me, error: meErr } = await sb.from("trackit_profiles").select("*").eq("id", session.user.id).maybeSingle();
+  if (meErr) { showConnError(); return; }
   if (!me) return show("noaccess");
   S.me = me;
   $("#meName").textContent = me.full_name || me.email;
@@ -72,20 +73,27 @@ async function bootInner(session){
   go(location.hash.slice(1) || "dashboard");
 }
 
+function showConnError(){
+  const box = $("#noaccess .login-card");
+  box.innerHTML = `<div class="brand"><div class="logo">½M</div><div><b>Trackit</b></div></div>
+    <h1>Couldn't connect</h1><p>Trackit couldn't reach the server. Check your internet connection and try again.</p>
+    <button class="btn" onclick="location.reload()">Try again</button>`;
+  show("noaccess");
+}
+
 // ---------- data ----------
 async function pageAll(table, order){
   const rows = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await sb.from(table).select("*").order(order).range(from, from + 999);
+    const { data, error } = await sb.from(table).select("*").order(order).order("id").range(from, from + 999);
     if (error) { toast(error.message); break; }
     rows.push(...data); if (data.length < 1000) break;
   }
   return rows;
 }
 async function loadAll(){
-  const [emps, weeks] = await Promise.all([pageAll("trackit_staff", "expiry"), pageAll("trackit_week_totals", "created_at")]);
+  const emps = await pageAll("trackit_staff", "expiry");
   S.emps = emps.sort((a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : 1);
-  S.weeks = weeks;
   if (isAdmin()) {
     const [{ data }, { data: st }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
       sb.from("trackit_settings").select("email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result").eq("id", 1).maybeSingle()]);
@@ -97,7 +105,12 @@ function subscribe(){
   S.channel = sb.channel("trackit-staff")
     .on("postgres_changes", { event: "*", schema: "public", table: "trackit_staff" }, () => {
       clearTimeout(reloadT); reloadT = setTimeout(async () => { await loadAll(); render(true); }, 800);
-    }).subscribe();
+    }).subscribe(status => {
+      const online = status === "SUBSCRIBED";
+      document.body.classList.toggle("offline", !online);
+      if (online && S.wasOffline) { S.wasOffline = false; loadAll().then(() => render(true)); }
+      if (!online) S.wasOffline = true;
+    });
 }
 const stores = () => [...new Set(S.emps.map(e => e.store).filter(Boolean))].sort();
 const regions = () => [...new Set([...REGIONS, ...S.emps.map(e => e.region).filter(Boolean)])];
@@ -120,7 +133,7 @@ function render(fromLive){
   if (S.view === "import") bindDrop();
   if (keepFocus && document.getElementById(keepFocus)) { const el = document.getElementById(keepFocus); el.focus(); if (el.setSelectionRange && el.value) el.setSelectionRange(el.value.length, el.value.length); }
 }
-const header = (t, p, extra="") => `<div class="top"><div><h2>${t}</h2><p>${p}</p></div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="live"><i></i>Live</span>${extra}</div></div>`;
+const header = (t, p, extra="") => `<div class="top"><div><h2>${t}</h2><p>${p}</p></div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="live" title="Updates appear automatically"><i></i><span class="on-txt">Live</span><span class="off-txt">Reconnecting…</span></span>${extra}</div></div>`;
 
 // ---------- dashboard ----------
 function counts(list){ const c = { exp:0, due:0, miss:0, ok:0, total:list.length }; for (const e of list) c[statusOf(e)]++; return c; }
@@ -223,7 +236,7 @@ function delEmp(id){
 const empRow = e => [e.employee_id, e.name, e.store, e.region, e.iqama, e.nationality, e.expiry || "", e.mobile, e.remarks];
 function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Status"], ...filtered().map(e => [...empRow(e), STATUS_LABEL[statusOf(e)]])]); }
 function downloadCSV(name, rows){
-  const csv = "﻿" + rows.map(r => r.map(v => { v = String(v ?? ""); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(",")).join("\r\n");
+  const csv = "﻿" + rows.map(r => r.map(v => { v = String(v ?? ""); if (/^[=+\-@\t\r]/.test(v) && !/^-?\d/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(",")).join("\r\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
@@ -289,6 +302,7 @@ async function readWorkbook(file){
       const get = k => idx[k] >= 0 ? r[idx[k]] : "";
       const eid = String(get("employee_id")).trim().replace(/\.0$/, ""); const nm = String(get("name")).trim();
       if (!eid && !nm) return;
+      if (nm === "Example Name" && /delete this example/i.test(String(get("remarks")))) return;
       const d = readDate(get("expiry"));
       rows.push({ where: `${name.trim()} row ${h + i + 2}`, employee_id: eid, name: nm.replace(/\s+/g," "), store: String(get("store")).replace(/\s+/g," ").trim(),
         region: normRegion(get("region")), iqama: String(get("iqama")).trim().replace(/\.0$/, ""), nationality: normNationality(get("nationality")),
@@ -317,7 +331,7 @@ function importView(){
     <div class="card pad"><div class="step-n">1</div><h3>Use the Trackit template</h3>
       <p class="note">One sheet, one row per employee, these columns: <b>${COLS.join(", ")}</b>.</p>
       <p class="note">Rows are matched by <b>Employee ID</b> — new people are added and changes are updated. Nobody is removed.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn tan" onclick="downloadTemplate(false)">Download empty template</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn tan" href="trackit-template.xlsx" download>Download template</a>
       ${S.emps.length ? `<button class="btn ghost" onclick="downloadTemplate(true)">Download current list</button>` : ""}</div>
     </div>
     <div class="card pad"><div class="step-n">2</div><h3>Upload</h3>
@@ -425,13 +439,14 @@ function importResult(){
 function alerts(){
   const by = s => S.emps.filter(e => statusOf(e) === s);
   const lists = { exp: by("exp"), due: by("due"), miss: by("miss") };
-  const list = lists[S.alertTab];
+  const all = lists[S.alertTab], per = 50, pages = Math.max(1, Math.ceil(all.length / per));
+  S.page = Math.min(S.page, pages); const list = all.slice((S.page - 1) * per, S.page * per);
   return header("Alerts", "Who needs a Baladiya renewal") + `
-  <div class="tabs">${[["exp","Expired"],["due","Due ≤ 30 days"],["miss","Date missing"]].map(([k,l]) => `<button class="${S.alertTab===k?"on":""}" onclick="S.alertTab='${k}';render()">${l} (${lists[k].length})</button>`).join("")}</div>
+  <div class="tabs">${[["exp","Expired"],["due","Due ≤ 30 days"],["miss","Date missing"]].map(([k,l]) => `<button class="${S.alertTab===k?"on":""}" onclick="S.alertTab='${k}';S.page=1;render()">${l} (${lists[k].length})</button>`).join("")}</div>
   ${S.alertTab === "miss" ? `<p class="note" style="margin-top:-4px">No usable expiry date. Check the Baladiya system and enter the date.</p>` : ""}
   <div class="card">${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">AM remarks</th><th></th></tr></thead><tbody>
   ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}<div class="sub">${esc(e.region)}</div></td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px"><span class="sub">${esc(e.remarks)}</span></td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
-  </tbody></table></div>` : `<div class="empty">Nobody in this list.</div>`}</div>`;
+  </tbody></table></div>${pages > 1 ? `<div class="pager"><span>${all.length.toLocaleString()} people · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>` : ""}` : `<div class="empty">Nobody in this list.</div>`}</div>`;
 }
 
 // ---------- assistant ----------

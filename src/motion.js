@@ -78,7 +78,7 @@
     entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
   }, { rootMargin: "0px 0px -6% 0px" }) : null;
 
-  const ARROW = /^(See all alerts|Go to dashboard|Update|Save|Create login|Add employee|\+ Add employee|Upload another file|Download empty template|Download current list)$/;
+  const ARROW = /^(See all alerts|Go to dashboard|Update|Save|Create login|Add employee|\+ Add employee|Upload another file|Download template|Download current list)$/;
   const seen = new Set();
   let lastView = null, alarmShown = false;
   function after(fromLive){

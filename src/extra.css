@@ -32,3 +32,9 @@
   div.sm-only{display:block}
   td.mono{white-space:normal}
 }
+.live .off-txt{display:none}
+.offline .live{background:#EFE5D8;color:#6E655B}
+.offline .live i,.offline .live i::after{background:#9b8f80}
+.offline .live .on-txt{display:none}
+.offline .live .off-txt{display:inline}
+a.btn{text-decoration:none}
