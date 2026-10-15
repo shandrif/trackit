@@ -67,9 +67,9 @@ Deno.serve(async (req) => {
 
     const rows: any[] = [];
     for (let from = 0; ; from += 1000) {
-      // Only names, stores, regions, dates and remarks — never Iqama or mobile numbers
+      // Only names, stores, dates and remarks — never Iqama or mobile numbers
       const { data, error } = await service.from("trackit_staff")
-        .select("name,store,region,nationality,expiry,expiry_note,remarks")
+        .select("name,store,nationality,expiry,expiry_note,remarks")
         .order("expiry", { nullsFirst: true }).range(from, from + 999);
       if (error) return json({ error: error.message }, 400);
       rows.push(...(data || []));
@@ -80,23 +80,23 @@ Deno.serve(async (req) => {
     type G = { total: number; expired: number; due: number; missing: number };
     const add = (m: Record<string, G>, k: string) => (m[k] ??= { total: 0, expired: 0, due: 0, missing: 0 });
     let expired = 0, due = 0, ok = 0, missing = 0;
-    const byStore: Record<string, G> = {}, byRegion: Record<string, G> = {};
+    const byStore: Record<string, G> = {};
     const urgent: string[] = [];
     for (const r of rows) {
-      const gs = [add(byStore, `${r.store || "(no store)"} (${r.region || "no region"})`), add(byRegion, r.region || "(no region)")];
+      const gs = [add(byStore, r.store || "(no store)")];
       let st: string;
       if (!r.expiry) { missing++; st = "missing"; } else { const d = Math.round((Date.parse(r.expiry) - today) / DAY); st = d < 0 ? "expired" : d <= 30 ? "due" : "ok"; }
       if (st === "expired") expired++; else if (st === "due") due++; else if (st === "ok") ok++;
       for (const g of gs) { g.total++; if (st !== "ok") (g as any)[st]++; }
       if (st !== "ok" && urgent.length < 400) {
-        urgent.push(`${r.name} | ${r.store} | ${r.region} | ${r.expiry ? `expiry ${r.expiry}, ${status(r.expiry, today)}` : `NO DATE (file said: ${r.expiry_note || "blank"})`}${r.remarks ? " | AM remark: " + String(r.remarks).slice(0, 80) : ""}`);
+        urgent.push(`${r.name} | ${r.store} | ${r.expiry ? `expiry ${r.expiry}, ${status(r.expiry, today)}` : `NO DATE (file said: ${r.expiry_note || "blank"})`}${r.remarks ? " | AM remark: " + String(r.remarks).slice(0, 80) : ""}`);
       }
     }
     const fmt = (m: Record<string, G>, n: number) => Object.entries(m).sort((a, b) => (b[1].expired + b[1].due + b[1].missing) - (a[1].expired + a[1].due + a[1].missing)).slice(0, n)
       .map(([k, v]) => `${k}: ${v.total} staff, ${v.expired} expired, ${v.due} due in 30 days, ${v.missing} no date`).join("\n");
     const context = `Today is ${todayStr}. Baladiya health card records: ${rows.length}. Expired: ${expired}. Due within 30 days: ${due}. Date missing: ${missing}. OK: ${ok}.
 
-By region:\n${fmt(byRegion, 10)}\n\nBy store:\n${fmt(byStore, 150)}\n\nEveryone expired, due within 30 days, or with no date (most overdue first):\n${urgent.join("\n") || "none"}`;
+By store:\n${fmt(byStore, 150)}\n\nEveryone expired, due within 30 days, or with no date (most overdue first):\n${urgent.join("\n") || "none"}`;
 
     const messages = [
       { role: "system", content: "You are Trackit's assistant for Half Million Coffee. You help the team keep staff Baladiya (municipality) health cards renewed. Answer ONLY from the data provided. Be brief and practical. Use plain sentences or short '-' lists. Do not use markdown bold, tables or headings. Status rules: expiry date before today = expired; within 30 days = due soon; no date = date missing (needs checking in the Baladiya system); otherwise OK. If the data does not answer the question, say so. Reply in the same language the user writes in (English or Arabic or Hindi)." },

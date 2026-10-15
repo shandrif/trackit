@@ -406,12 +406,11 @@ const SUPABASE_URL = "https://rcufmnidwyycbrtqgqga.supabase.co";
 const SUPABASE_KEY = "sb_publishable_u2__PPq2nDZLyoNnLHxkVA_olltjpHc";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const DUE_DAYS = 30;
-const REGIONS = ["Riyadh","Western","Eastern","North","South"];
 const NATIONALITIES = ["Saudi","Bangladeshi","Indian","Filipino","Pakistani","Nepali","Egyptian","Sudanese","Yemeni","Eritrean","Sri Lankan","Jordanian","Syrian","Other"];
-const COLS = ["Employee ID","Name","Store","Region","Iqama Number","Nationality","Expiry Date","Mobile Number","AM Remarks"];
+const COLS = ["Employee ID","Name","Store","Iqama Number","Nationality","Expiry Date","Mobile Number","AM Remarks"];
 
 // ---------- state ----------
-const S = { me:null, emps:[], weeks:[], profiles:[], view:"dashboard", page:1, filters:{q:"",region:"",store:"",status:""}, alertTab:"exp", chat:[], channel:null, imp:null };
+const S = { me:null, emps:[], weeks:[], profiles:[], view:"dashboard", page:1, filters:{q:"",store:"",status:""}, alertTab:"exp", chat:[], channel:null, imp:null };
 
 // ---------- helpers ----------
 const $ = s => document.querySelector(s);
@@ -516,7 +515,6 @@ function subscribe(){
     });
 }
 const stores = () => [...new Set(S.emps.map(e => e.store).filter(Boolean))].sort();
-const regions = () => [...new Set([...REGIONS, ...S.emps.map(e => e.region).filter(Boolean)])];
 
 // ---------- routing ----------
 function go(v){ if (!VIEWS().some(x => x[0] === v)) v = "dashboard"; S.view = v; S.page = 1; location.hash = v; render(); window.scrollTo(0,0); }
@@ -551,7 +549,7 @@ function groupTable(titleTxt, colName, rows, filterKey){
   ${rows.map(([k,v]) => `<tr style="cursor:pointer" onclick="openGroup('${filterKey}',this.dataset.k)" data-k="${esc(k === "—" ? "" : k)}"><td><b>${esc(k)}</b></td><td class="mono">${v.total}</td><td class="mono" style="color:${v.exp?"var(--red)":"var(--muted)"};font-weight:${v.exp?700:400}">${v.exp}</td><td class="mono" style="color:${v.due?"var(--amber)":"var(--muted)"};font-weight:${v.due?700:400}">${v.due}</td><td class="mono hm">${v.miss}</td></tr>`).join("")}
   </tbody></table></div></div>`;
 }
-function openGroup(key, val){ S.filters = { q:"", region:"", store:"", status:"" }; S.filters[key] = val; go("employees"); }
+function openGroup(key, val){ S.filters = { q:"", store:"", status:"" }; S.filters[key] = val; go("employees"); }
 function dashboard(){
   const c = counts(S.emps);
   const kpi = (st, lbl, v, sub, col) => `<div class="card kpi" onclick="quick('${st}')"><div class="l"><span class="dot" style="background:${col}"></span>${lbl}</div><div class="v mono" style="color:${col}">${v.toLocaleString()}</div><div class="s">${sub}</div></div>`;
@@ -564,29 +562,27 @@ function dashboard(){
     ${kpi("miss", "Date missing", c.miss, "Check Baladiya system", "#6E655B")}
     ${kpi("ok", "OK", c.ok, "More than 30 days", "var(--teal-d)")}
   </div>
-  ${groupTable("By region", "Region", groupRows(e => e.region), "region")}
-  <div class="section">${groupTable("By store", "Store", groupRows(e => e.store), "store")}</div>
+  ${groupTable("By store", "Store", groupRows(e => e.store), "store")}
   <div class="card section"><div class="pad" style="padding-bottom:6px"><h3>Needs action soonest</h3></div>
     ${next.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">AM remarks</th></tr></thead><tbody>
-    ${next.map(e => `<tr onclick="editEmp('${e.id}')" style="cursor:pointer"><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}<div class="sub">${esc(e.region)}</div></td><td class="mono">${dateCell(e)}</td><td class="hm"><span class="sub">${esc(e.remarks)}</span></td></tr>`).join("")}
+    ${next.map(e => `<tr onclick="editEmp('${e.id}')" style="cursor:pointer"><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="mono">${dateCell(e)}</td><td class="hm"><span class="sub">${esc(e.remarks)}</span></td></tr>`).join("")}
     </tbody></table></div><div class="pager"><span>The 8 most overdue</span><button class="btn sm ghost" onclick="go('alerts')">See all alerts</button></div>` : `<div class="empty">${S.emps.length ? "Nothing expired or due in the next 30 days." : "No employees yet. Go to <a href='#import'>Import</a> to upload the weekly file."}</div>`}
   </div>`;
 }
-function quick(st){ S.filters = { q:"", region:"", store:"", status:st }; go("employees"); }
+function quick(st){ S.filters = { q:"", store:"", status:st }; go("employees"); }
 
 // ---------- employees ----------
 function filtered(){
-  const { q, region, store, status } = S.filters; const ql = q.trim().toLowerCase();
+  const { q, store, status } = S.filters; const ql = q.trim().toLowerCase();
   return S.emps.filter(e => (!ql || e.name.toLowerCase().includes(ql) || e.employee_id.toLowerCase().includes(ql) || String(e.iqama).includes(ql) || String(e.mobile).includes(ql)) &&
-    (!region || e.region === region) && (!store || e.store === store) && (!status || statusOf(e) === status));
+    (!store || e.store === store) && (!status || statusOf(e) === status));
 }
 function filterBar(){
   const f = S.filters;
-  const sts = [...new Set(S.emps.filter(e => !f.region || e.region === f.region).map(e => e.store).filter(Boolean))].sort();
+  const sts = [...new Set(S.emps.map(e => e.store).filter(Boolean))].sort();
   const sel = (key, all, opts) => `<select onchange="S.filters.${key}=this.value;S.page=1;render()"><option value="">${all}</option>${opts.map(([v,l]) => `<option value="${esc(v)}" ${f[key]===v?"selected":""}>${esc(l)}</option>`).join("")}</select>`;
   return `<div class="filters">
     <input id="fq" type="search" placeholder="Search name, ID, Iqama or mobile…" value="${esc(f.q)}" oninput="S.filters.q=this.value;S.page=1;render()">
-    ${sel("region", "All regions", regions().map(r => [r, r]))}
     ${sel("store", "All stores", sts.map(s => [s, s]))}
     ${sel("status", "All statuses", Object.entries(STATUS_LABEL))}
   </div>`;
@@ -596,14 +592,14 @@ function employees(){
   S.page = Math.min(S.page, pages); const slice = list.slice((S.page-1)*per, S.page*per);
   return header("Employees", "Search, filter and update expiry dates", `<button class="btn ghost" onclick="exportCSV()">Export list</button><button class="btn" onclick="editEmp()">+ Add employee</button>`) + filterBar() + `
   <div class="card">${slice.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th class="hm">Nationality</th><th>Baladiya expiry</th><th class="hm">Status</th><th class="hm">AM remarks</th><th></th></tr></thead><tbody>
-    ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}<div class="sub">${esc(e.region)}</div></td><td class="hm">${esc(e.nationality)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${pill(e)}</td><td class="hm" style="max-width:240px"><span class="sub">${esc(e.remarks)}</span></td>
+    ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="hm">${esc(e.nationality)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${pill(e)}</td><td class="hm" style="max-width:240px"><span class="sub">${esc(e.remarks)}</span></td>
     <td style="white-space:nowrap;text-align:right">${contact(e)}<button class="icon-btn" title="Edit" aria-label="Edit" onclick="editEmp('${e.id}')" style="display:inline-block">${ICON.edit}</button>${isAdmin() ? `<button class="icon-btn hm" title="Delete" aria-label="Delete" onclick="delEmp('${e.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
   </tbody></table></div>
   <div class="pager"><span>${list.length.toLocaleString()} employee${list.length===1?"":"s"} · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>`
   : `<div class="empty">${S.emps.length ? "No employees match these filters." : "No employees yet. Use <a href='#import'>Import</a> to upload this week's file."}</div>`}</div>`;
 }
 function editEmp(id){
-  const e = id ? S.emps.find(x => x.id === id) : { employee_id:"", name:"", store:"", region:"", iqama:"", nationality:"", mobile:"", expiry:"", expiry_note:"", remarks:"" };
+  const e = id ? S.emps.find(x => x.id === id) : { employee_id:"", name:"", store:"", iqama:"", nationality:"", mobile:"", expiry:"", expiry_note:"", remarks:"" };
   const opts = (list, cur) => [...new Set([...list, cur].filter(Boolean))].map(n => `<option ${n===cur?"selected":""}>${esc(n)}</option>`).join("");
   modal(`<h3>${id ? esc(e.name) : "Add employee"}</h3>${id ? `<p class="note" style="margin-top:-8px">${pill(e)} ${contact(e)}</p>` : ""}
     <form id="ef">
@@ -613,16 +609,15 @@ function editEmp(id){
       <div class="row2"><div><label>Employee ID</label><input type="text" name="employee_id" required value="${esc(e.employee_id)}"></div>
       <div><label>Name</label><input type="text" name="name" required value="${esc(e.name)}"></div></div>
       <div class="row2"><div><label>Store</label><input type="text" name="store" list="storeList" required value="${esc(e.store)}"><datalist id="storeList">${stores().map(s => `<option value="${esc(s)}">`).join("")}</datalist></div>
-      <div><label>Region</label><select name="region" required><option value="">—</option>${opts(REGIONS, e.region)}</select></div></div>
-      <div class="row2"><div><label>Iqama number</label><input type="text" name="iqama" inputmode="numeric" value="${esc(e.iqama)}"></div>
       <div><label>Nationality</label><select name="nationality"><option value="">—</option>${opts(NATIONALITIES, e.nationality)}</select></div></div>
-      <div class="row2"><div><label>Mobile number</label><input type="text" name="mobile" inputmode="tel" value="${esc(e.mobile)}" placeholder="5XXXXXXXX"></div><div></div></div>
+      <div class="row2"><div><label>Iqama number</label><input type="text" name="iqama" inputmode="numeric" value="${esc(e.iqama)}"></div>
+      <div><label>Mobile number</label><input type="text" name="mobile" inputmode="tel" value="${esc(e.mobile)}" placeholder="5XXXXXXXX"></div></div>
       <div class="err" id="eerr"></div>
       <div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn">${id ? "Save" : "Add employee"}</button></div>
     </form>`, true);
   $("#ef").onsubmit = async ev => {
     ev.preventDefault(); const fd = Object.fromEntries(new FormData(ev.target));
-    const row = { employee_id: fd.employee_id.trim(), name: fd.name.trim(), store: fd.store.trim(), region: fd.region, iqama: fd.iqama.trim(), nationality: fd.nationality,
+    const row = { employee_id: fd.employee_id.trim(), name: fd.name.trim(), store: fd.store.trim(), iqama: fd.iqama.trim(), nationality: fd.nationality,
       mobile: fd.mobile.replace(/\D/g,""), expiry: fd.expiry || null, remarks: fd.remarks.trim() };
     if (row.expiry) row.expiry_note = "";
     const { error } = id ? await sb.from("trackit_staff").update(row).eq("id", id) : await sb.from("trackit_staff").insert(row);
@@ -636,7 +631,7 @@ function delEmp(id){
   <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="dbtn">Delete</button></div>`);
   $("#dbtn").onclick = async () => { const { error } = await sb.from("trackit_staff").delete().eq("id", id); if (error) return toast(error.message); closeModal(); toast("Deleted"); await loadAll(); render(); };
 }
-const empRow = e => [e.employee_id, e.name, e.store, e.region, e.iqama, e.nationality, e.expiry || "", e.mobile, e.remarks];
+const empRow = e => [e.employee_id, e.name, e.store, e.iqama, e.nationality, e.expiry || "", e.mobile, e.remarks];
 function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Status"], ...filtered().map(e => [...empRow(e), STATUS_LABEL[statusOf(e)]])]); }
 function downloadCSV(name, rows){
   const csv = "﻿" + rows.map(r => r.map(v => { v = String(v ?? ""); if (/^[=+\-@\t\r]/.test(v) && !/^-?\d/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(",")).join("\r\n");
@@ -649,7 +644,6 @@ const HEAD = {
   employee_id: ["employee id","employee number","employee no","emp no","emp id","staff id"],
   name: ["name","employee name","full name"],
   store: ["store","branch","store name","branch name"],
-  region: ["region"],
   iqama: ["iqama number","iqama","iqama no"],
   nationality: ["nationality"],
   expiry: ["expiry date","expire date","expired date","expiration date","expiry","expire"],
@@ -686,10 +680,6 @@ function normNationality(v){
   for (const [re, n] of map) if (re.test(u)) return n;
   return "Other";
 }
-function normRegion(v){
-  const u = String(v||"").trim().toLowerCase(); if (!u) return "";
-  return REGIONS.find(r => r.toLowerCase() === u || u.startsWith(r.toLowerCase().slice(0,4))) || String(v).trim();
-}
 function normMobile(v){ return String(v||"").replace(/\D/g,"").replace(/^(00)?966/, "").replace(/^0+/, ""); }
 async function readWorkbook(file){
   const wb = XLSX.read(await file.arrayBuffer(), { type:"array", cellDates:true });
@@ -708,7 +698,7 @@ async function readWorkbook(file){
       if (nm === "Example Name" && /delete this example/i.test(String(get("remarks")))) return;
       const d = readDate(get("expiry"));
       rows.push({ where: `${name.trim()} row ${h + i + 2}`, employee_id: eid, name: nm.replace(/\s+/g," "), store: String(get("store")).replace(/\s+/g," ").trim(),
-        region: normRegion(get("region")), iqama: String(get("iqama")).trim().replace(/\.0$/, ""), nationality: normNationality(get("nationality")),
+        iqama: String(get("iqama")).trim().replace(/\.0$/, ""), nationality: normNationality(get("nationality")),
         mobile: normMobile(get("mobile")), expiry: d.date, expiry_note: d.note, unclear: d.unclear, remarks: String(get("remarks") ?? "").replace(/\s+/g," ").trim() });
       n++;
     });
@@ -738,7 +728,7 @@ function importView(){
       ${S.emps.length ? `<button class="btn ghost" onclick="downloadTemplate(true)">Download current list</button>` : ""}</div>
     </div>
     <div class="card pad"><div class="step-n">2</div><h3>Upload</h3>
-      <p class="note">You'll see a check before anything is saved: duplicates, unclear dates and missing store or region.</p>
+      <p class="note">You'll see a check before anything is saved: duplicates, unclear dates and missing stores.</p>
       <label class="drop" id="drop"><input type="file" id="file" accept=".xlsx,.xls,.csv" class="hidden"><b>Choose the file</b><div class="note">or drag it here</div></label>
       <div id="impOut"></div>
     </div>
@@ -762,10 +752,10 @@ function wipeAll(){
   };
 }
 function downloadTemplate(withData){
-  const data = withData ? S.emps.map(e => { const r = empRow(e); r[6] = e.expiry ? new Date(e.expiry + "T00:00:00") : ""; return r; }) : [];
+  const data = withData ? S.emps.map(e => { const r = empRow(e); r[5] = e.expiry ? new Date(e.expiry + "T00:00:00") : ""; return r; }) : [];
   const ws = XLSX.utils.aoa_to_sheet([COLS, ...data], { cellDates:true });
-  ws["!cols"] = [16,30,26,12,16,14,14,16,40].map(w => ({ wch:w }));
-  for (let i = 1; i <= data.length; i++) { const c = ws[XLSX.utils.encode_cell({ r:i, c:6 })]; if (c && c.t === "d") c.z = "dd-mmm-yyyy"; }
+  ws["!cols"] = [16,30,26,16,14,14,16,40].map(w => ({ wch:w }));
+  for (let i = 1; i <= data.length; i++) { const c = ws[XLSX.utils.encode_cell({ r:i, c:5 })]; if (c && c.t === "d") c.z = "dd-mmm-yyyy"; }
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Employees");
   XLSX.writeFile(wb, withData ? `trackit-current-list-${new Date().toISOString().slice(0,10)}.xlsx` : "trackit-template.xlsx");
 }
@@ -788,9 +778,9 @@ async function handleFile(file){
 function importPreview(){
   const I = S.imp;
   const unclear = I.rows.filter(r => r.unclear), missing = I.rows.filter(r => !r.expiry && !r.unclear).length;
-  const noStore = I.rows.filter(r => !r.store), noRegion = I.rows.filter(r => !r.region), odd = I.rows.filter(r => r.region && !REGIONS.includes(r.region));
+  const noStore = I.rows.filter(r => !r.store);
   const listRows = (rows, cell) => `<div class="tbl-wrap section"><table><thead><tr><th>Where</th><th>Employee</th><th>File says</th></tr></thead><tbody>${rows.slice(0,100).map(r => `<tr><td>${esc(r.where)}</td><td>${esc(r.name)}</td><td>${esc(cell(r))}</td></tr>`).join("")}</tbody></table></div>`;
-  const good = !I.conflicts.length && !unclear.length && !noStore.length && !noRegion.length && !odd.length;
+  const good = !I.conflicts.length && !unclear.length && !noStore.length;
   return header("Check before saving", `${esc(I.file)} · ${I.rows.length} rows`, `<button class="btn ghost" onclick="S.imp=null;render()">Cancel</button>`) + `
   ${I.sheets.filter(s => !s.skipped).length > 1 ? `<div class="card pad"><h3>Sheets</h3><p class="note">${I.sheets.map(s => `${esc(s.name.trim())}: ${s.skipped ? "skipped" : `<b>${s.rows}</b> rows`}`).join(" · ")}</p></div>` : ""}
   ${good ? `<div class="okbox section">Everything looks clean.</div>` : ""}
@@ -804,10 +794,8 @@ function importPreview(){
     <p class="note"><b>${I.rows.filter(r => r.expiry).length}</b> rows have a date. <b>${missing}</b> have no date (blank, N/A, NOT FOUND) and will show as <b>Date missing</b>.</p>
     ${unclear.length ? `<div class="warnbox">${unclear.length} dates couldn't be read and will be saved as <b>Date missing</b>:</div>${listRows(unclear, r => r.expiry_note)}` : ""}
   </div>
-  ${noStore.length || noRegion.length || odd.length ? `<div class="card pad section"><h3>Store and region</h3>
-    ${noStore.length ? `<div class="warnbox">${noStore.length} rows have no store.</div>${listRows(noStore, () => "(blank)")}` : ""}
-    ${noRegion.length ? `<div class="warnbox section">${noRegion.length} rows have no region. They'll show under "—" until you fill it in.</div>` : ""}
-    ${odd.length ? `<div class="warnbox section">${odd.length} rows have a region that isn't one of ${REGIONS.join(", ")}: ${[...new Set(odd.map(r => r.region))].map(esc).join(", ")}</div>` : ""}
+  ${noStore.length ? `<div class="card pad section"><h3>Store</h3>
+    <div class="warnbox">${noStore.length} rows have no store.</div>${listRows(noStore, () => "(blank)")}
   </div>` : ""}
   <div class="card pad section"><h3>Save</h3>
     <div class="actions" style="justify-content:flex-start"><button class="btn" id="impBtn" onclick="runImport()">Save ${new Set(I.rows.map(r => r.employee_id)).size} employees</button></div>
@@ -818,7 +806,7 @@ async function runImport(){
   const I = S.imp; $("#impBtn").disabled = true;
   try {
     const last = new Map(); I.rows.forEach(r => last.set(r.employee_id || r.where, r));
-    const rows = [...last.values()].map(r => ({ row: r.where, employee_id: r.employee_id, name: r.name, store: r.store, region: r.region, iqama: r.iqama,
+    const rows = [...last.values()].map(r => ({ row: r.where, employee_id: r.employee_id, name: r.name, store: r.store, iqama: r.iqama,
       nationality: r.nationality, mobile: r.mobile, expiry: r.expiry, expiry_note: r.expiry_note, remarks: r.remarks }));
     const tot = { added:0, updated:0, skipped:0, errors:[] };
     for (let i = 0; i < rows.length; i += 500) {
@@ -848,7 +836,7 @@ function alerts(){
   <div class="tabs">${[["exp","Expired"],["due","Due ≤ 30 days"],["miss","Date missing"]].map(([k,l]) => `<button class="${S.alertTab===k?"on":""}" onclick="S.alertTab='${k}';S.page=1;render()">${l} (${lists[k].length})</button>`).join("")}</div>
   ${S.alertTab === "miss" ? `<p class="note" style="margin-top:-4px">No usable expiry date. Check the Baladiya system and enter the date.</p>` : ""}
   <div class="card">${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">AM remarks</th><th></th></tr></thead><tbody>
-  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}<div class="sub">${esc(e.region)}</div></td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px"><span class="sub">${esc(e.remarks)}</span></td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
+  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px"><span class="sub">${esc(e.remarks)}</span></td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
   </tbody></table></div>${pages > 1 ? `<div class="pager"><span>${all.length.toLocaleString()} people · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>` : ""}` : `<div class="empty">Nobody in this list.</div>`}</div>`;
 }
 
@@ -863,9 +851,9 @@ function md(t){
 function assistant(){
   return header("AI Assistant", "Ask about Baladiya renewals in plain words") + `
   <div class="card chat"><div class="msgs" id="msgs"></div>
-  <div class="chips" id="chips">${["Which store has the most expired cards?","Who expires this week?","Which region is doing worst?","Make a renewal plan for this week"].map(q => `<button onclick="ask(this.textContent)">${q}</button>`).join("")}</div>
+  <div class="chips" id="chips">${["Which store has the most expired cards?","Who expires this week?","Which stores have nobody expired?","Make a renewal plan for this week"].map(q => `<button onclick="ask(this.textContent)">${q}</button>`).join("")}</div>
   <form class="composer" onsubmit="event.preventDefault();ask($('#cq').value)"><input id="cq" type="text" placeholder="Ask about your employees…" autocomplete="off"><button class="btn">Send</button></form></div>
-  <p class="note" style="margin-top:10px">The assistant sees names, stores, regions, dates and remarks — never Iqama or mobile numbers. Free AI has a daily limit.</p>`;
+  <p class="note" style="margin-top:10px">The assistant sees names, stores, dates and remarks — never Iqama or mobile numbers. Free AI has a daily limit.</p>`;
 }
 function afterChat(){
   const box = $("#msgs"); if (!box) return;

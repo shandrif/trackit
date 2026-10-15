@@ -43,8 +43,8 @@ function buildEmail(rows: any[], today: string) {
   const head = "padding:8px 10px;text-align:left;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#6E655B;background:#F7F1E9";
   const table = (list: any[], kind: "exp" | "due") => list.length ? `
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fff;border:1px solid #EFE5D8;border-radius:10px">
-      <tr><th style="${head}">Employee</th><th style="${head}">Store</th><th style="${head}">Region</th><th style="${head}">Expiry</th></tr>
-      ${list.map((r) => `<tr><td style="${cell}"><b>${esc(r.name)}</b><br><span style="color:#6E655B;font-size:12px">${esc(r.employee_id)}</span></td><td style="${cell}">${esc(r.store)}</td><td style="${cell}">${esc(r.region)}</td>
+      <tr><th style="${head}">Employee</th><th style="${head}">Store</th><th style="${head}">Expiry</th></tr>
+      ${list.map((r) => `<tr><td style="${cell}"><b>${esc(r.name)}</b><br><span style="color:#6E655B;font-size:12px">${esc(r.employee_id)}</span></td><td style="${cell}">${esc(r.store)}</td>
         <td style="${cell};white-space:nowrap">${fmt(r.expiry)}<br><span style="font-size:12px;color:${kind === "exp" ? "#C2412D" : "#A9875F"}">${kind === "exp" ? `${-r.n} day${r.n === -1 ? "" : "s"} ago` : r.n === 0 ? "today" : `in ${r.n} day${r.n === 1 ? "" : "s"}`}</span></td></tr>`).join("")}
     </table>` : `<p style="font-size:13px;color:#6E655B;margin:0">Nobody.</p>`;
   const kpi = (label: string, v: number, col: string) => `<td style="padding:12px 14px;background:#fff;border:1px solid #EFE5D8;border-radius:10px" width="33%"><div style="font-size:12px;color:#6E655B">${label}</div><div style="font-size:26px;font-weight:700;color:${col}">${v}</div></td>`;
@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
 
     const rows: any[] = [];
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await service.from("trackit_staff").select("employee_id,name,store,region,expiry").order("expiry").range(from, from + 999);
+      const { data, error } = await service.from("trackit_staff").select("employee_id,name,store,expiry").order("expiry").range(from, from + 999);
       if (error) return json({ error: error.message }, 500);
       rows.push(...(data || []));
       if (!data || data.length < 1000) break;
