@@ -64,18 +64,33 @@ $("#loginForm").addEventListener("submit", async e => {
   $("#lbtn").disabled = false;
   if (error) $("#lerr").textContent = error.message === "Invalid login credentials" ? "Wrong email or password." : error.message;
 });
-async function signOut(){ if (S.channel) sb.removeChannel(S.channel); await sb.auth.signOut(); location.reload(); }
-sb.auth.onAuthStateChange((ev, session) => { setTimeout(() => { if (ev === "SIGNED_IN" && !S.me && !S.booting) boot(session); if (ev === "SIGNED_OUT") { if (S.me) location.reload(); else show("login"); } }, 0); });
+function clearLocalLogin(){ try { Object.keys(localStorage).filter(k => /^sb-.*-auth-token/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) { /* storage blocked */ } }
+let signingOut = false;
+async function signOut(){
+  if (signingOut) return; signingOut = true;
+  document.querySelectorAll("button").forEach(b => { if (/sign out/i.test(b.textContent)) { b.disabled = true; b.textContent = "Signing out…"; } });
+  try { if (S.channel) sb.removeChannel(S.channel); } catch (e) { /* ignore */ }
+  // sign out on this device only; never wait more than 3 seconds for the server
+  try { await Promise.race([sb.auth.signOut({ scope: "local" }), new Promise(r => setTimeout(r, 3000))]); } catch (e) { /* ignore */ }
+  clearLocalLogin();
+  location.replace(location.pathname + location.search);
+}
+sb.auth.onAuthStateChange((ev, session) => { setTimeout(() => { if (ev === "SIGNED_IN" && !S.me && !S.booting) boot(session); if (ev === "SIGNED_OUT" && !signingOut) { if (S.me) location.reload(); else show("login"); } }, 0); });
 function show(which){ ["login","noaccess","shell"].forEach(id => $("#"+id).classList.toggle("hidden", id !== which)); if (which !== "shell") hideSplash(); }
 function hideSplash(){ const s = $("#splash"); if (!s || s.dataset.out) return; s.dataset.out = "1"; s.classList.add("out"); setTimeout(() => s.remove(), 400); }
 setTimeout(hideSplash, 15000);
 let xlsxP = null;
 function needXLSX(){ if (window.XLSX) return Promise.resolve(); return xlsxP || (xlsxP = new Promise((ok, bad) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; s.onload = () => ok(); s.onerror = () => { xlsxP = null; s.remove(); bad(new Error("Couldn't load the Excel reader. Check your internet and try again.")); }; document.head.appendChild(s); })); }
-async function boot(session){ if (S.booting || S.me) return; S.booting = true; try { await bootInner(session); } finally { S.booting = false; } }
+async function boot(session){ if (S.booting || S.me) return; S.booting = true; try { await bootInner(session); } catch (e) { console.error(e); if (!S.me) showConnError(); } finally { S.booting = false; } }
 async function bootInner(session){
   if (!session) { const { data } = await sb.auth.getSession(); session = data.session; }
   if (!session) return show("login");
-  const { data: me, error: meErr } = await sb.from("trackit_profiles").select("*").eq("id", session.user.id).maybeSingle();
+  // check with the login server that this login is still active (it may have been ended on another device)
+  const [{ error: uErr }, { data: me, error: meErr }] = await Promise.all([
+    sb.auth.getUser().catch(err => ({ error: err })),
+    sb.from("trackit_profiles").select("*").eq("id", session.user.id).maybeSingle(),
+  ]);
+  if (uErr && uErr.status >= 400 && uErr.status < 500) { try { await sb.auth.signOut({ scope: "local" }); } catch (e) { /* ignore */ } clearLocalLogin(); return show("login"); }
   if (meErr) { showConnError(); return; }
   if (!me) return show("noaccess");
   S.me = me;
@@ -586,4 +601,4 @@ function closeModal(){ $("#modalRoot").innerHTML = ""; }
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
 
 // ---------- start ----------
-sb.auth.getSession().then(({ data }) => data.session ? boot(data.session) : show("login"));
+sb.auth.getSession().then(({ data }) => data.session ? boot(data.session) : show("login")).catch(() => { clearLocalLogin(); show("login"); });

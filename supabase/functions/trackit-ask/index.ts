@@ -12,21 +12,26 @@ const PREFERRED = [
   "google/gemma-4-31b-it:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "google/gemma-4-26b-a4b-it:free",
-  "thinkingmachines/inkling:free",
   "nvidia/nemotron-3.5-lightning:free",
 ];
+// models that refuse apps like this one (e.g. "only available on agentic harnesses") or aren't chat models
+const SKIP = /inkling|safety|guard|code|omni|nano|2\.6b|embed|vision-only|audio/i;
+const blocked = new Set<string>();
 let cachedFree: string[] | null = null;
+let cachedAt = 0;
 async function freeModels(): Promise<string[]> {
-  if (cachedFree) return cachedFree;
+  if (cachedFree && Date.now() - cachedAt < 3600_000) return cachedFree.filter((m) => !blocked.has(m));
+  cachedAt = Date.now();
   try {
     const r = await fetch("https://openrouter.ai/api/v1/models");
     const j = await r.json();
     const ids: string[] = (j.data || []).map((m: any) => m.id).filter((id: string) => id.endsWith(":free"));
     const pref = PREFERRED.filter((p) => p === "openrouter/free" || ids.includes(p));
-    const rest = ids.filter((id) => !pref.includes(id) && !/safety|code|omni|nano|2\.6b/i.test(id));
-    cachedFree = [...pref, ...rest].slice(0, 8);
+    const rest = ids.filter((id) => !pref.includes(id) && !SKIP.test(id));
+    cachedFree = [...pref, ...rest].slice(0, 12);
   } catch { cachedFree = PREFERRED; }
-  return cachedFree.length ? cachedFree : PREFERRED;
+  const list = (cachedFree.length ? cachedFree : PREFERRED).filter((m) => !blocked.has(m));
+  return list.length ? list : PREFERRED;
 }
 
 // Find the OpenRouter key even if the secret name has a small typo or stray spaces.
@@ -107,28 +112,51 @@ By store:\n${fmt(byStore, 150)}\n\nEveryone expired, due within 30 days, or with
 
     const fails: string[] = [];
     let dailyCap = false;
-    for (const model of await freeModels()) {
-      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "Trackit" },
-        body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 700 }),
-      });
+    const ask = async (model: string): Promise<Response | "retry" | "skip"> => {
+      let r: Response;
+      try {
+        r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "Trackit" },
+          body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 700 }),
+          signal: AbortSignal.timeout(25000),
+        });
+      } catch (err) { fails.push(`${model}: timeout`); console.log("openrouter fail", model, String(err)); return "skip"; }
       if (r.ok) {
-        const j = await r.json();
+        const j = await r.json().catch(() => ({}));
         const answer = j.choices?.[0]?.message?.content?.trim();
         if (answer) return json({ answer, model });
         fails.push(`${model}: empty answer`);
-        continue;
+        return "skip";
       }
       const body = await r.text();
       if (r.status === 401) return json({ error: "The OpenRouter key was rejected. Ask the admin to check it." }, 502);
-      if (r.status === 402) return json({ error: "OpenRouter says this account needs credit for this request (" + body.slice(0, 160) + ")" }, 502);
+      if (r.status === 402) return json({ error: "OpenRouter says this account needs credit for this request." }, 502);
       if (r.status === 429 && /per-day|per day|daily/i.test(body)) dailyCap = true;
+      if (r.status === 403 || r.status === 404 || r.status === 400) blocked.add(model);
       fails.push(`${model}: ${r.status}`);
       console.log("openrouter fail", model, r.status, body.slice(0, 300));
+      return r.status === 429 || r.status >= 500 ? "retry" : "skip";
+    };
+    const models = await freeModels();
+    let again: string[] = [];
+    for (const model of models) {
+      const res = await ask(model);
+      if (res instanceof Response) return res;
+      if (res === "retry") again.push(model);
+      if (dailyCap) break;
     }
-    if (dailyCap) return json({ error: "The free AI limit for today has been reached for this OpenRouter account. It resets daily." }, 503);
-    return json({ error: "The free AI models are busy right now. Please try again in a minute. (" + fails.join("; ") + ")" }, 503);
+    if (!dailyCap && again.length) {
+      await new Promise((r) => setTimeout(r, 2000));
+      for (const model of again.slice(0, 4)) {
+        const res = await ask(model);
+        if (res instanceof Response) return res;
+        if (dailyCap) break;
+      }
+    }
+    console.log("all models failed:", fails.join("; "));
+    if (dailyCap) return json({ error: "The free AI limit for today has been reached. It resets tomorrow." }, 503);
+    return json({ error: "The free AI is busy right now. Please try again in a minute." }, 503);
   } catch (e) {
     return json({ error: String((e as any)?.message || e) }, 500);
   }
