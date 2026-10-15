@@ -233,6 +233,18 @@ img.logo{background:none!important;border-radius:24%;object-fit:cover;box-shadow
   #splash.out .sp-box{transform:none}
 }
 @keyframes spFade{to{opacity:1}}
+
+/* ---------- fixed app frame: only the content area scrolls ---------- */
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+#shell:not(.hidden){height:100vh;height:100dvh;display:flex;flex-direction:column}
+#shell #app{flex:1 1 auto;min-height:0;grid-template-rows:minmax(0,1fr)}
+#shell aside{position:relative;top:auto;height:auto;overflow-y:auto}
+#main{height:100%;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#login,#noaccess{height:100vh!important;height:100dvh!important;min-height:0!important;overflow-y:auto;overscroll-behavior:contain}
+@media (max-width:900px){
+  #shell .mobile-top{position:relative;flex:none}
+  #main .filters{top:10px}
+}
 /* ================= Trackit motion & glass layer =================
    Motion rules (after Emil Kowalski's animation standards):
    - UI motion < 300ms, strong ease-out, never ease-in, no bounce on a work dashboard
@@ -587,7 +599,7 @@ function subscribe(){
 const stores = () => [...new Set(S.emps.map(e => e.store).filter(Boolean))].sort();
 
 // ---------- routing ----------
-function go(v){ if (!VIEWS().some(x => x[0] === v)) v = "dashboard"; S.view = v; S.page = 1; location.hash = v; render(); window.scrollTo(0,0); }
+function go(v){ if (!VIEWS().some(x => x[0] === v)) v = "dashboard"; S.view = v; S.page = 1; location.hash = v; render(); const m = $("#main"); if (m) m.scrollTop = 0; }
 window.addEventListener("hashchange", () => { const v = location.hash.slice(1); if (S.me && v && v !== S.view) go(v); });
 function renderNav(){
   $("#nav").innerHTML = VIEWS().map(([k,l,i]) => `<button class="${S.view===k?"on":""}" onclick="go('${k}')">${i}<span>${l}</span></button>`).join("");
@@ -1182,10 +1194,10 @@ sb.auth.getSession().then(({ data }) => data.session ? boot(data.session) : show
   }, { passive: true });
 
   // filter bar turns to glass once it sticks while scrolling
-  window.addEventListener("scroll", () => {
-    const f = document.querySelector("#main .filters"); if (!f) return;
-    f.classList.toggle("stuck", f.getBoundingClientRect().top <= (innerWidth <= 900 ? 67 : 11) && scrollY > 80);
-  }, { passive: true });
+  document.addEventListener("scroll", () => {
+    const main = document.getElementById("main"), f = main && main.querySelector(".filters"); if (!f) return;
+    f.classList.toggle("stuck", main.scrollTop > 80 && f.getBoundingClientRect().top - main.getBoundingClientRect().top <= parseFloat(getComputedStyle(main).paddingTop) + parseFloat(getComputedStyle(f).top) + 2);
+  }, { passive: true, capture: true });
 })();
 
 </script>

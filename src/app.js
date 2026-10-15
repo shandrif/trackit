@@ -129,7 +129,7 @@ function subscribe(){
 const stores = () => [...new Set(S.emps.map(e => e.store).filter(Boolean))].sort();
 
 // ---------- routing ----------
-function go(v){ if (!VIEWS().some(x => x[0] === v)) v = "dashboard"; S.view = v; S.page = 1; location.hash = v; render(); window.scrollTo(0,0); }
+function go(v){ if (!VIEWS().some(x => x[0] === v)) v = "dashboard"; S.view = v; S.page = 1; location.hash = v; render(); const m = $("#main"); if (m) m.scrollTop = 0; }
 window.addEventListener("hashchange", () => { const v = location.hash.slice(1); if (S.me && v && v !== S.view) go(v); });
 function renderNav(){
   $("#nav").innerHTML = VIEWS().map(([k,l,i]) => `<button class="${S.view===k?"on":""}" onclick="go('${k}')">${i}<span>${l}</span></button>`).join("");

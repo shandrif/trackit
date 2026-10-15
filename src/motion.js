@@ -134,8 +134,8 @@
   }, { passive: true });
 
   // filter bar turns to glass once it sticks while scrolling
-  window.addEventListener("scroll", () => {
-    const f = document.querySelector("#main .filters"); if (!f) return;
-    f.classList.toggle("stuck", f.getBoundingClientRect().top <= (innerWidth <= 900 ? 67 : 11) && scrollY > 80);
-  }, { passive: true });
+  document.addEventListener("scroll", () => {
+    const main = document.getElementById("main"), f = main && main.querySelector(".filters"); if (!f) return;
+    f.classList.toggle("stuck", main.scrollTop > 80 && f.getBoundingClientRect().top - main.getBoundingClientRect().top <= parseFloat(getComputedStyle(main).paddingTop) + parseFloat(getComputedStyle(f).top) + 2);
+  }, { passive: true, capture: true });
 })();
