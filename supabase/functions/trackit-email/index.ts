@@ -52,7 +52,7 @@ function buildEmail(rows: any[], today: string) {
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:24px 12px">
   <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;width:100%">
     <tr><td style="background:#111;border-radius:12px;padding:16px 20px;color:#fff">
-      <span style="display:inline-block;width:34px;height:34px;border-radius:50%;background:#F5EDE3;color:#111;text-align:center;line-height:34px;font-weight:700;font-size:13px;vertical-align:middle">½M</span>
+      <img src="${APP_URL}icon-email.png" width="34" height="34" alt="Trackit" style="display:inline-block;width:34px;height:34px;border-radius:8px;vertical-align:middle;border:0">
       <span style="font-size:18px;font-weight:700;vertical-align:middle;margin-left:8px">Trackit</span>
       <span style="float:right;color:#D4B38B;font-size:13px;line-height:34px">Baladiya card alert · ${fmt(today)}</span></td></tr>
     <tr><td style="padding:18px 0 6px"><table role="presentation" width="100%" cellspacing="8" cellpadding="0" style="margin:0 -8px"><tr>

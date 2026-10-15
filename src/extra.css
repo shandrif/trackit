@@ -38,3 +38,5 @@
 .offline .live .on-txt{display:none}
 .offline .live .off-txt{display:inline}
 a.btn{text-decoration:none}
+img.logo{background:none!important;border-radius:24%;object-fit:cover;box-shadow:0 6px 16px -8px rgba(91,92,246,.55)}
+.login-card img.logo{width:52px;height:52px}

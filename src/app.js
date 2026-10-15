@@ -74,7 +74,7 @@ async function bootInner(session){
 
 function showConnError(){
   const box = $("#noaccess .login-card");
-  box.innerHTML = `<div class="brand"><div class="logo">½M</div><div><b>Trackit</b></div></div>
+  box.innerHTML = `<div class="brand"><img class="logo" src="icon.svg" alt="Trackit"><div><b>Trackit</b></div></div>
     <h1>Couldn't connect</h1><p>Trackit couldn't reach the server. Check your internet connection and try again.</p>
     <button class="btn" onclick="location.reload()">Try again</button>`;
   show("noaccess");

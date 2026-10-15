@@ -5,7 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trackit · Baladiya Card Tracker</title>
 <meta name="description" content="Track staff Baladiya health card renewals across Half Million stores.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='32' fill='%23111'/%3E%3Ctext x='32' y='41' font-family='Arial' font-weight='700' font-size='26' text-anchor='middle' fill='%23F5EDE3'%3E½M%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-title" content="Trackit">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
@@ -170,7 +175,7 @@ td.mono{white-space:nowrap}
 <!-- LOGIN -->
 <section id="login" class="hidden">
   <form class="login-card" id="loginForm">
-    <div class="brand"><div class="logo">½M</div><div><b>Trackit</b><small>Baladiya card tracker</small></div></div>
+    <div class="brand"><img class="logo" src="icon.svg" alt="Trackit"><div><b>Trackit</b><small>Baladiya card tracker</small></div></div>
     <h1>Sign in</h1>
     <p>Use the email and password your admin gave you.</p>
     <label for="lemail">Email</label>
@@ -184,17 +189,17 @@ td.mono{white-space:nowrap}
 </section>
 
 <div id="noaccess" class="hidden" style="min-height:100vh;display:grid;place-items:center;padding:24px">
-  <div class="login-card"><div class="brand"><div class="logo">½M</div><div><b>Trackit</b></div></div>
+  <div class="login-card"><div class="brand"><img class="logo" src="icon.svg" alt="Trackit"><div><b>Trackit</b></div></div>
   <h1>No access yet</h1><p>Your login works, but it hasn't been added to Trackit. Ask the admin to add you.</p>
   <button class="btn" onclick="signOut()">Sign out</button></div>
 </div>
 
 <!-- APP -->
 <div id="shell" class="hidden">
-<div class="mobile-top"><div class="brand"><div class="logo">½M</div><b>Trackit</b></div><button onclick="signOut()">Sign out</button></div>
+<div class="mobile-top"><div class="brand"><img class="logo" src="icon.svg" alt="Trackit"><b>Trackit</b></div><button onclick="signOut()">Sign out</button></div>
 <div id="app">
   <aside>
-    <div class="brand"><div class="logo">½M</div><div><b>Trackit</b><small>Baladiya card tracker</small></div></div>
+    <div class="brand"><img class="logo" src="icon.svg" alt="Trackit"><div><b>Trackit</b><small>Baladiya card tracker</small></div></div>
     <nav id="nav"></nav>
     <div class="me"><b id="meName"></b><span id="meRole"></span><br><button onclick="signOut()">Sign out</button></div>
   </aside>
