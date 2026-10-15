@@ -1,0 +1,152 @@
+/* ================= Trackit motion & glass layer =================
+   Motion rules (after Emil Kowalski's animation standards):
+   - UI motion < 300ms, strong ease-out, never ease-in, no bounce on a work dashboard
+   - only transform + opacity animate; specific properties, never "transition: all"
+   - frequent actions (tab switches, filters) get little motion; first-time moments get a little delight
+   - hover motion only for mouse users; reduced-motion keeps fades, drops movement
+*/
+:root{
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --glass: rgba(255,253,249,.68);
+  --glass-strong: rgba(255,253,249,.88);
+  --glass-edge: rgba(255,255,255,.7);
+  --glass-dark: rgba(17,17,17,.9);
+  --shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 1px 2px rgba(80,56,30,.06), 0 12px 32px -14px rgba(80,56,30,.28);
+  --shadow-lift: 0 1px 0 rgba(255,255,255,.7) inset, 0 2px 4px rgba(80,56,30,.06), 0 22px 44px -18px rgba(80,56,30,.38);
+}
+
+/* ---- ambient background (slow, decorative, off for reduced motion) ---- */
+.ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.ambient i{position:absolute;border-radius:50%;opacity:.7;will-change:transform}
+.ambient i:nth-child(1){width:46vmax;height:46vmax;left:-12vmax;top:-14vmax;background:radial-gradient(circle,rgba(212,179,139,.55),rgba(212,179,139,0) 68%);animation:drift1 28s var(--ease-in-out) infinite alternate}
+.ambient i:nth-child(2){width:40vmax;height:40vmax;right:-10vmax;top:18vh;background:radial-gradient(circle,rgba(132,198,178,.42),rgba(132,198,178,0) 66%);animation:drift2 34s var(--ease-in-out) infinite alternate}
+.ambient i:nth-child(3){width:36vmax;height:36vmax;left:28vw;bottom:-18vmax;background:radial-gradient(circle,rgba(169,135,95,.32),rgba(169,135,95,0) 66%);animation:drift3 40s var(--ease-in-out) infinite alternate}
+@keyframes drift1{to{transform:translate(9vmax,7vmax) scale(1.12)}}
+@keyframes drift2{to{transform:translate(-8vmax,-6vmax) scale(.9)}}
+@keyframes drift3{to{transform:translate(-6vmax,-9vmax) scale(1.15)}}
+#login,#noaccess,#shell,#modalRoot{position:relative;z-index:1}
+
+/* ---- glass surfaces ---- */
+.card{background:var(--glass);border:1px solid var(--glass-edge);
+  -webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);
+  transition:transform 200ms var(--ease-out),box-shadow 200ms var(--ease-out)}
+.kpi{position:relative;overflow:hidden;transition:transform 200ms var(--ease-out),box-shadow 200ms var(--ease-out)}
+.kpi::after{content:"";position:absolute;inset:0;background:radial-gradient(220px circle at var(--mx,50%) var(--my,0%),rgba(255,255,255,.7),transparent 60%);opacity:0;transition:opacity 200ms var(--ease-out);pointer-events:none}
+.kpi.alarm .v{animation:alarm 1.6s ease-in-out 3}
+@keyframes alarm{0%,100%{text-shadow:0 0 0 rgba(194,65,45,0)}50%{text-shadow:0 0 16px rgba(194,65,45,.45)}}
+th{background:rgba(251,246,239,.85)}
+.login-card{background:var(--glass-strong);border:1px solid var(--glass-edge);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);backdrop-filter:blur(22px) saturate(150%);box-shadow:var(--shadow-lift);
+  animation:rise 300ms var(--ease-out) both}
+aside{background:var(--glass-dark);-webkit-backdrop-filter:blur(22px) saturate(160%);backdrop-filter:blur(22px) saturate(160%);border-right:1px solid rgba(255,255,255,.06)}
+.filters{position:sticky;top:10px;z-index:5;padding:10px;margin:0 -10px 14px;border-radius:16px;transition:background-color 200ms var(--ease-out),box-shadow 200ms var(--ease-out)}
+.filters.stuck{background:rgba(245,237,227,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 10px 30px -18px rgba(80,56,30,.4)}
+input[type=text],input[type=email],input[type=password],input[type=date],input[type=search],select,textarea{
+  background:rgba(255,255,255,.82);transition:border-color 150ms var(--ease-out),box-shadow 150ms var(--ease-out),background-color 150ms var(--ease-out)}
+input:focus,select:focus,textarea:focus{background:#fff}
+
+/* ---- sliding indicators (FLIP: transform only, no bounce) ---- */
+nav{position:relative}
+nav button{position:relative;z-index:1;transition:color 150ms var(--ease-out),background-color 150ms var(--ease-out)}
+nav button.on{background:transparent}
+.ind{position:absolute;left:0;top:0;z-index:0;border-radius:11px;pointer-events:none;transform-origin:0 0;will-change:transform}
+.ind.go{transition:transform 220ms var(--ease-in-out)}
+nav > .ind{background:var(--tan);box-shadow:0 6px 18px -6px rgba(212,179,139,.6)}
+.tabs,.seg{position:relative}
+.tabs button,.seg button{position:relative;z-index:1;transition:color 150ms var(--ease-out)}
+.tabs button.on,.seg button.on{background:transparent;box-shadow:none}
+.tabs > .ind,.seg > .ind{background:var(--card);box-shadow:0 2px 8px -2px rgba(80,56,30,.25);border-radius:9px}
+.seg > .ind.done{background:var(--teal)}
+.bottom-nav button{transition:color 150ms var(--ease-out),transform 200ms var(--ease-out)}
+.bottom-nav button.on{transform:translateY(-2px)}
+.bottom-nav button.on svg{filter:drop-shadow(0 4px 8px rgba(212,179,139,.55))}
+
+/* ---- buttons ---- */
+.btn{position:relative;overflow:hidden;isolation:isolate;transition:transform 160ms var(--ease-out),box-shadow 200ms var(--ease-out),background-color 150ms var(--ease-out)}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn.ghost{background:rgba(255,255,255,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.btn.arrow::after{content:"→";display:inline-block;width:0;opacity:0;transform:translateX(-4px);transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
+.ripple{position:absolute;border-radius:50%;pointer-events:none;background:currentColor;opacity:.18;transform:scale(.2);z-index:2;
+  transition:transform 400ms var(--ease-out),opacity 400ms var(--ease-out)}
+.ripple.go{transform:scale(1);opacity:0}
+.icon-btn,.contact a{transition:transform 150ms var(--ease-out),background-color 150ms var(--ease-out),color 150ms var(--ease-out)}
+.icon-btn:active,.contact a:active{transform:scale(.92)}
+.chips button{transition:transform 160ms var(--ease-out),border-color 150ms var(--ease-out),background-color 150ms var(--ease-out)}
+
+/* ---- tables ---- */
+tbody tr{transition:background-color 120ms var(--ease-out)}
+tbody tr td:first-child{box-shadow:inset 0 0 0 0 var(--tan);transition:box-shadow 150ms var(--ease-out)}
+.pill{transition:transform 150ms var(--ease-out)}
+
+/* ---- hover effects: mouse users only ---- */
+@media (hover: hover) and (pointer: fine){
+  .card:hover{box-shadow:var(--shadow-lift)}
+  .kpi:hover{transform:translateY(-3px)}
+  .kpi:hover::after{opacity:1}
+  nav button:hover{background:rgba(255,255,255,.06)}
+  .btn:not(.ghost):not(:disabled):hover{box-shadow:0 10px 22px -12px rgba(17,17,17,.55)}
+  .btn:not(.ghost):not(.tan):not(.danger)::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.2) 48%,transparent 66%);transform:translateX(-120%);transition:transform 450ms var(--ease-out)}
+  .btn:not(.ghost):not(.tan):not(.danger):hover::before{transform:translateX(120%)}
+  .btn.ghost:hover{background:rgba(255,255,255,.9);border-color:var(--tan)}
+  .btn.arrow:hover::after{width:1em;opacity:1;transform:none}
+  .icon-btn:hover{transform:scale(1.1)}
+  .contact a:hover{transform:scale(1.12);color:var(--teal-d)}
+  .chips button:hover{transform:translateY(-2px);background:#fff}
+  tbody tr:hover{background:rgba(251,246,239,.9)}
+  tbody tr:hover td:first-child{box-shadow:inset 3px 0 0 0 var(--tan)}
+  tr:hover .pill{transform:scale(1.04)}
+  .drop:hover{border-color:var(--tan-d);background:rgba(251,246,239,.9)}
+}
+
+/* ---- entrances ---- */
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.enter > *{animation:rise 260ms var(--ease-out) both;animation-delay:calc(var(--i,0) * 50ms)}
+.enter.first tbody tr:nth-child(-n+8){animation:rise 240ms var(--ease-out) both;animation-delay:calc(120ms + var(--r,0) * 30ms)}
+.reveal{opacity:0;transform:translateY(8px);transition:opacity 300ms var(--ease-out),transform 300ms var(--ease-out)}
+.reveal.in{opacity:1;transform:none}
+
+/* ---- skeleton ---- */
+.skel{border-radius:14px;background:linear-gradient(100deg,rgba(234,223,208,.55) 30%,rgba(255,255,255,.75) 50%,rgba(234,223,208,.55) 70%);background-size:300% 100%;animation:shimmer 1.2s linear infinite}
+@keyframes shimmer{from{background-position:100% 0}to{background-position:0 0}}
+
+/* ---- toast (transition-based so it can be interrupted) ---- */
+.toast{background:rgba(17,17,17,.9);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  opacity:0;transform:translate(-50%,12px) scale(.97);transition:opacity 300ms ease,transform 300ms ease}
+.toast.show{opacity:1;transform:translate(-50%,0) scale(1)}
+
+/* ---- modal: centred, fast scale-in from .96 ---- */
+.modal-bg{background:rgba(17,17,17,.32);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);animation:fade 200ms var(--ease-out) both}
+.modal{background:var(--glass-strong);border:1px solid var(--glass-edge);-webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%);
+  box-shadow:0 30px 80px -30px rgba(40,28,15,.55);animation:pop 220ms var(--ease-out) both}
+@keyframes pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+
+/* ---- live dot & upload ---- */
+.live i{animation:none;position:relative}
+.live i::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--teal-d);animation:ping 2.4s var(--ease-out) infinite}
+@keyframes ping{0%{transform:scale(1);opacity:.6}70%,100%{transform:scale(2.6);opacity:0}}
+.drop{transition:transform 200ms var(--ease-out),box-shadow 200ms var(--ease-out),background-color 200ms var(--ease-out),border-color 200ms var(--ease-out);background:rgba(251,246,239,.6)}
+.drop.over{transform:scale(1.015);border-color:var(--teal-d);background:rgba(221,240,234,.7);box-shadow:0 0 0 6px rgba(132,198,178,.25),0 18px 40px -20px rgba(47,138,114,.5)}
+
+/* ---- phone ---- */
+@media (max-width:900px){
+  .mobile-top{background:var(--glass-dark);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%)}
+  .bottom-nav{background:var(--glass-dark);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);border-top:1px solid rgba(255,255,255,.06)}
+  .filters{top:66px}
+  .card{-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+  .ambient i{opacity:.4}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom))}
+  .kpis.k5 > :last-child{grid-column:span 2}
+}
+
+/* ---- reduced motion: keep fades, drop movement ---- */
+@media (prefers-reduced-motion: reduce){
+  .ambient,.ripple{display:none}
+  .enter > *,.enter.first tbody tr,.login-card,.modal{animation-name:fade!important}
+  .reveal{transform:none}
+  .ind.go{transition:none}
+  .kpi.alarm .v,.live i::after,.skel{animation:none}
+  .toast,.toast.show{transform:translate(-50%,0)}
+  .btn:active:not(:disabled),.bottom-nav button.on,.drop.over{transform:none}
+}

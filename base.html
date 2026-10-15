@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trackit · Baladiya Card Tracker</title>
+<meta name="description" content="Track staff Baladiya health card renewals across Half Million stores.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='32' fill='%23111'/%3E%3Ctext x='32' y='41' font-family='Arial' font-weight='700' font-size='26' text-anchor='middle' fill='%23F5EDE3'%3E½M%3C/text%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#F5EDE3; --card:#FFFDF9; --ink:#111111; --muted:#6E655B; --line:#E4D7C5;
+  --tan:#D4B38B; --tan-d:#A9875F; --teal:#84C6B2; --teal-d:#2F8A72;
+  --red:#C2412D; --red-bg:#F8E1DB; --amber:#A8691C; --amber-bg:#F7E6CC; --ok-bg:#DDF0EA;
+  --radius:16px; --shadow:0 1px 0 rgba(17,17,17,.04),0 8px 24px -12px rgba(80,56,30,.18);
+  --font:"Frutiger LT Arabic","Frutiger LT","Frutiger","Segoe UI","Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.45}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:inherit}
+.hidden{display:none!important}
+/* logo */
+.logo{width:40px;height:40px;border-radius:50%;background:var(--ink);color:var(--bg);display:grid;place-items:center;font-weight:700;font-size:15px;letter-spacing:-.5px;flex:none}
+.brand{display:flex;align-items:center;gap:12px}
+.brand b{font-size:20px;letter-spacing:-.3px;display:block;line-height:1.1}
+.brand small{color:var(--muted);font-size:12px}
+/* login */
+#login{min-height:100vh;display:grid;place-items:center;padding:24px}
+.login-card{width:100%;max-width:400px;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:34px 30px;box-shadow:var(--shadow)}
+.login-card h1{font-size:26px;margin:22px 0 6px;letter-spacing:-.4px}
+.login-card p{color:var(--muted);margin:0 0 22px}
+label{display:block;font-size:13px;font-weight:600;margin:14px 0 6px}
+input[type=text],input[type=email],input[type=password],input[type=date],input[type=search],select,textarea{
+  width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:11px;background:#fff;outline:none;min-height:44px}
+input:focus,select:focus,textarea:focus{border-color:var(--tan-d);box-shadow:0 0 0 3px rgba(212,179,139,.35)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:11px;padding:11px 18px;font-weight:600;cursor:pointer;min-height:44px;background:var(--ink);color:var(--bg);white-space:nowrap}
+.btn:hover{background:#2a2622}
+.btn.tan{background:var(--tan);color:var(--ink)} .btn.tan:hover{background:#c9a476}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)} .btn.ghost:hover{background:#fff}
+.btn.danger{background:var(--red);color:#fff}
+.btn.sm{padding:7px 12px;min-height:34px;font-size:13px;border-radius:9px}
+.btn:disabled{opacity:.5;cursor:default}
+.w100{width:100%}
+.err{color:var(--red);font-size:13px;margin-top:10px;min-height:18px}
+/* shell */
+#app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+aside{background:var(--ink);color:var(--bg);padding:22px 16px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
+aside .logo{background:var(--bg);color:var(--ink)}
+aside .brand small{color:#bfb3a3}
+nav{margin-top:26px;display:flex;flex-direction:column;gap:4px}
+nav button{display:flex;align-items:center;gap:12px;background:transparent;border:0;color:#d9cfc2;padding:11px 12px;border-radius:11px;cursor:pointer;text-align:left;font-weight:500}
+nav button:hover{background:#26221e;color:#fff}
+nav button.on{background:var(--tan);color:var(--ink);font-weight:700}
+nav button svg{width:19px;height:19px;flex:none}
+nav .sep{font-size:11px;letter-spacing:.12em;color:#8f8476;margin:16px 12px 4px;text-transform:uppercase}
+.me{margin-top:auto;border-top:1px solid #2c2722;padding-top:14px;font-size:13px}
+.me b{display:block;color:#fff;font-size:14px}
+.me span{color:#bfb3a3}
+.me button{margin-top:10px;background:transparent;border:1px solid #3a342e;color:#d9cfc2;border-radius:9px;padding:7px 12px;cursor:pointer}
+main{padding:28px 32px 60px;min-width:0}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.top h2{margin:0;font-size:28px;letter-spacing:-.5px}
+.top p{margin:4px 0 0;color:var(--muted)}
+.live{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--teal-d);background:var(--ok-bg);padding:5px 10px;border-radius:999px;font-weight:600}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--teal-d);animation:pulse 2s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.pad{padding:20px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}
+.kpi{padding:18px 20px;cursor:pointer;transition:transform .12s}
+.kpi:hover{transform:translateY(-2px)}
+.kpi .l{color:var(--muted);font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.kpi .v{font-size:38px;font-weight:700;letter-spacing:-1px;margin-top:6px;line-height:1}
+.kpi .s{font-size:12px;color:var(--muted);margin-top:6px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.grid2{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}
+h3{margin:0 0 14px;font-size:17px}
+.bar{display:flex;height:16px;border-radius:999px;overflow:hidden;background:#efe5d8;margin:6px 0 12px}
+.bar span{display:block;height:100%}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.legend b{color:var(--ink)}
+/* table */
+.tbl-wrap{overflow:auto;border-radius:var(--radius)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:12px 14px;border-bottom:1px solid var(--line);background:#FBF6EF;position:sticky;top:0;white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid #EFE5D8;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td .sub{color:var(--muted);font-size:12px}
+.mono{font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
+.pill i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.p-exp{background:var(--red-bg);color:var(--red)} .p-due{background:var(--amber-bg);color:var(--amber)} .p-ok{background:var(--ok-bg);color:var(--teal-d)}
+.icon-btn{background:transparent;border:0;border-radius:8px;padding:6px;cursor:pointer;color:var(--muted)}
+.icon-btn:hover{background:#f1e7da;color:var(--ink)}
+.icon-btn svg{width:17px;height:17px;display:block}
+.filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.filters > *{flex:1 1 160px;max-width:260px}
+.filters input[type=search]{flex:2 1 240px;max-width:none}
+.pager{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);gap:10px;flex-wrap:wrap}
+.empty{padding:42px 20px;text-align:center;color:var(--muted)}
+.tabs{display:inline-flex;background:#EADFD0;border-radius:12px;padding:4px;margin-bottom:14px}
+.tabs button{border:0;background:transparent;padding:9px 16px;border-radius:9px;font-weight:600;cursor:pointer;color:var(--muted)}
+.tabs button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.steps{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.step-n{width:34px;height:34px;border-radius:10px;background:var(--tan);display:grid;place-items:center;font-weight:700;margin-bottom:12px}
+.drop{border:2px dashed var(--tan);border-radius:14px;padding:26px;text-align:center;background:#FBF6EF;cursor:pointer}
+.drop.over{background:#f3e6d4}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+.summary div{background:#FBF6EF;border-radius:12px;padding:12px;text-align:center}
+.summary b{display:block;font-size:24px}
+.errlist{max-height:240px;overflow:auto;font-size:13px;background:var(--red-bg);border-radius:12px;padding:12px 14px;color:#7a2a1d}
+.note{font-size:13px;color:var(--muted)}
+code{background:#EFE5D8;padding:1px 6px;border-radius:6px;font-size:12.5px}
+/* chat */
+.chat{display:flex;flex-direction:column;height:calc(100vh - 170px);min-height:420px}
+.msgs{flex:1;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:78%;padding:12px 15px;border-radius:14px;white-space:normal}
+.msg.u{align-self:flex-end;background:var(--ink);color:var(--bg);border-bottom-right-radius:4px}
+.msg.a{align-self:flex-start;background:#FBF6EF;border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg.a ul{margin:6px 0;padding-left:20px}
+.msg.a p{margin:0 0 6px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;padding:0 20px 12px}
+.chips button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 13px;cursor:pointer;font-size:13px}
+.chips button:hover{border-color:var(--tan-d)}
+.composer{display:flex;gap:10px;padding:14px;border-top:1px solid var(--line)}
+.typing{color:var(--muted);font-size:13px}
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(17,17,17,.45);display:grid;place-items:center;padding:16px;z-index:50}
+.modal{width:100%;max-width:480px;background:var(--card);border-radius:20px;padding:24px;max-height:92vh;overflow:auto}
+.modal h3{font-size:20px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;z-index:60;font-weight:600;box-shadow:var(--shadow)}
+.mobile-top,.bottom-nav{display:none}
+.sm-only{display:none}
+.sub.sm-only{display:none}
+td.mono{white-space:nowrap}
+@media (max-width:900px){
+  #app{grid-template-columns:1fr}
+  aside{display:none}
+  main{padding:18px 16px 96px}
+  .mobile-top{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--ink);color:var(--bg);position:sticky;top:0;z-index:20}
+  .mobile-top .logo{background:var(--bg);color:var(--ink);width:34px;height:34px;font-size:13px}
+  .mobile-top button{background:transparent;border:1px solid #3a342e;color:#d9cfc2;border-radius:9px;padding:6px 10px}
+  .bottom-nav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--ink);z-index:20;padding:6px 4px calc(6px + env(safe-area-inset-bottom));justify-content:space-around}
+  .bottom-nav button{background:transparent;border:0;color:#bfb3a3;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;padding:6px 4px;border-radius:10px;flex:1;cursor:pointer}
+  .bottom-nav button.on{color:var(--tan)}
+  .bottom-nav svg{width:21px;height:21px}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .grid2,.steps{grid-template-columns:1fr}
+  .kpi .v{font-size:30px}
+  .top h2{font-size:23px}
+  .msg{max-width:92%}
+  .summary{grid-template-columns:repeat(2,1fr)}
+  .row2{grid-template-columns:1fr}
+  .filters > *{max-width:none}
+  .hm{display:none}
+  .sm-only{display:inline}
+  .sub.sm-only{display:block}
+  td,th{padding:10px 10px}
+  .chat{height:calc(100vh - 290px);min-height:360px}
+  .pill{font-size:11px;padding:3px 8px}
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<section id="login" class="hidden">
+  <form class="login-card" id="loginForm">
+    <div class="brand"><div class="logo">½M</div><div><b>Trackit</b><small>Baladiya card tracker</small></div></div>
+    <h1>Sign in</h1>
+    <p>Use the email and password your admin gave you.</p>
+    <label for="lemail">Email</label>
+    <input id="lemail" type="email" autocomplete="username" required>
+    <label for="lpass">Password</label>
+    <input id="lpass" type="password" autocomplete="current-password" required>
+    <button class="btn w100" style="margin-top:20px" id="lbtn">Sign in</button>
+    <div class="err" id="lerr"></div>
+    <p class="note" style="margin:6px 0 0">Forgot your password? Ask your admin to reset it.</p>
+  </form>
+</section>
+
+<div id="noaccess" class="hidden" style="min-height:100vh;display:grid;place-items:center;padding:24px">
+  <div class="login-card"><div class="brand"><div class="logo">½M</div><div><b>Trackit</b></div></div>
+  <h1>No access yet</h1><p>Your login works, but it hasn't been added to Trackit. Ask the admin to add you.</p>
+  <button class="btn" onclick="signOut()">Sign out</button></div>
+</div>
+
+<!-- APP -->
+<div id="shell" class="hidden">
+<div class="mobile-top"><div class="brand"><div class="logo">½M</div><b>Trackit</b></div><button onclick="signOut()">Sign out</button></div>
+<div id="app">
+  <aside>
+    <div class="brand"><div class="logo">½M</div><div><b>Trackit</b><small>Baladiya card tracker</small></div></div>
+    <nav id="nav"></nav>
+    <div class="me"><b id="meName"></b><span id="meRole"></span><br><button onclick="signOut()">Sign out</button></div>
+  </aside>
+  <main id="main"></main>
+</div>
+<div class="bottom-nav" id="bnav"></div>
+</div>
+
+<div id="modalRoot"></div>
+
+<script>
+// ---------- config ----------
+const SUPABASE_URL = "https://rcufmnidwyycbrtqgqga.supabase.co";
+const SUPABASE_KEY = "sb_publishable_u2__PPq2nDZLyoNnLHxkVA_olltjpHc";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const DUE_DAYS = 30;
+
+// ---------- state ----------
+const S = { me:null, emps:[], managers:[], view:"dashboard", page:1, filters:{q:"",store:"",status:"",mgr:""}, alertTab:"due", chat:[], channel:null };
+
+// ---------- helpers ----------
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const todayUTC = () => { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()); };
+const daysLeft = d => Math.round((Date.parse(d) - todayUTC()) / 86400000);
+const statusOf = d => { const n = daysLeft(d); return n < 0 ? "exp" : n <= DUE_DAYS ? "due" : "ok"; };
+const fmtDate = d => { if(!d) return ""; const [y,m,dd] = d.split("-"); return `${dd} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]} ${y}`; };
+const relDays = d => { const n = daysLeft(d); return n < 0 ? `${-n} day${n===-1?"":"s"} ago` : n === 0 ? "today" : `in ${n} day${n===1?"":"s"}`; };
+const pill = d => { const s = statusOf(d); return `<span class="pill p-${s}"><i></i>${s==="exp"?"Expired":s==="due"?"Due ≤ 30 days":"OK"}</span>`; };
+const maskIq = v => { v = String(v||""); return v.length > 4 ? "•••• " + v.slice(-4) : v; };
+const isAdmin = () => S.me?.role === "admin";
+const mgrName = id => { const m = S.managers.find(x => x.id === id); return m ? (m.full_name || m.email) : (id === S.me?.id ? (S.me.full_name || S.me.email) : ""); };
+function toast(msg){ const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+const ICON = {
+  dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.9.7 3.1 2.5 3.5 5.2"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>',
+  shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+};
+const VIEWS = () => [
+  ["dashboard","Dashboard",ICON.dash],["employees","Employees",ICON.users],["import","Import",ICON.up],
+  ["alerts","Alerts",ICON.bell],["assistant","AI Assistant",ICON.spark],
+  ...(isAdmin() ? [["managers","Area Managers",ICON.shield]] : [])
+];
+
+// ---------- auth ----------
+$("#loginForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("#lerr").textContent = ""; $("#lbtn").disabled = true;
+  const { error } = await sb.auth.signInWithPassword({ email: $("#lemail").value.trim(), password: $("#lpass").value });
+  $("#lbtn").disabled = false;
+  if (error) $("#lerr").textContent = error.message === "Invalid login credentials" ? "Wrong email or password." : error.message;
+});
+async function signOut(){ if (S.channel) sb.removeChannel(S.channel); await sb.auth.signOut(); location.reload(); }
+sb.auth.onAuthStateChange((ev, session) => { setTimeout(() => { if (ev === "SIGNED_IN" && !S.me && !S.booting) boot(session); if (ev === "SIGNED_OUT") show("login"); }, 0); });
+function show(which){ ["login","noaccess","shell"].forEach(id => $("#"+id).classList.toggle("hidden", id !== which)); }
+
+async function boot(session){
+  if (S.booting || S.me) return; S.booting = true;
+  try { await bootInner(session); } finally { S.booting = false; }
+}
+async function bootInner(session){
+  if (!session) { const { data } = await sb.auth.getSession(); session = data.session; }
+  if (!session) return show("login");
+  const { data: me } = await sb.from("trackit_profiles").select("*").eq("id", session.user.id).maybeSingle();
+  if (!me) return show("noaccess");
+  S.me = me;
+  $("#meName").textContent = me.full_name || me.email;
+  $("#meRole").textContent = me.role === "admin" ? "Admin · all areas" : "Area Manager";
+  show("shell");
+  await loadAll();
+  subscribe();
+  go(location.hash.slice(1) || "dashboard");
+}
+
+// ---------- data ----------
+async function loadAll(){
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb.from("trackit_employees").select("*").order("expiry").range(from, from + 999);
+    if (error) { toast(error.message); break; }
+    rows.push(...data); if (data.length < 1000) break;
+  }
+  S.emps = rows;
+  if (isAdmin()) { const { data } = await sb.from("trackit_profiles").select("*").order("full_name"); S.managers = data || []; }
+}
+let reloadT = null;
+function subscribe(){
+  S.channel = sb.channel("trackit-emps")
+    .on("postgres_changes", { event: "*", schema: "public", table: "trackit_employees" }, () => {
+      clearTimeout(reloadT); reloadT = setTimeout(async () => { await loadAll(); render(true); }, 700);
+    }).subscribe();
+}
+
+// ---------- routing ----------
+function go(v){ if (!VIEWS().some(x => x[0] === v)) v = "dashboard"; S.view = v; S.page = 1; location.hash = v; render(); window.scrollTo(0,0); }
+window.addEventListener("hashchange", () => { const v = location.hash.slice(1); if (S.me && v && v !== S.view) go(v); });
+function renderNav(){
+  const html = VIEWS().map(([k,l,i]) => `<button class="${S.view===k?"on":""}" onclick="go('${k}')">${i}<span>${l}</span></button>`);
+  $("#nav").innerHTML = html.join("");
+  $("#bnav").innerHTML = VIEWS().map(([k,l,i]) => `<button class="${S.view===k?"on":""}" onclick="go('${k}')">${i}<span>${l.replace("AI Assistant","Ask AI").replace("Area Managers","Managers")}</span></button>`).join("");
+}
+function render(fromLive){
+  renderNav();
+  const m = $("#main");
+  if (fromLive && S.view === "assistant") return;           // don't wipe the chat on live updates
+  if (fromLive && document.querySelector(".modal-bg")) { /* keep modal open */ }
+  const f = { dashboard, employees, import: importView, alerts, assistant, managers }[S.view];
+  const keepFocus = document.activeElement?.id;
+  m.innerHTML = f();
+  if (S.view === "assistant") afterChat();
+  if (S.view === "import") bindDrop();
+  if (keepFocus && document.getElementById(keepFocus)) { const el = document.getElementById(keepFocus); el.focus(); if (el.setSelectionRange && el.value) el.setSelectionRange(el.value.length, el.value.length); }
+}
+const header = (t, p, extra="") => `<div class="top"><div><h2>${t}</h2><p>${p}</p></div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="live"><i></i>Live</span>${extra}</div></div>`;
+const scopeText = () => isAdmin() ? "All areas and stores" : "Your stores";
+
+// ---------- dashboard ----------
+function counts(list){ let exp=0,due=0,ok=0; for (const e of list){ const s = statusOf(e.expiry); s==="exp"?exp++:s==="due"?due++:ok++; } return {exp,due,ok,total:list.length}; }
+function dashboard(){
+  const c = counts(S.emps);
+  const pct = n => c.total ? (n / c.total * 100) : 0;
+  const groupKey = isAdmin() ? "mgr" : "store";
+  const groups = {};
+  for (const e of S.emps) {
+    const k = groupKey === "mgr" ? (mgrName(e.manager_id) || "—") : (e.store || "(no store)");
+    groups[k] ??= {total:0,exp:0,due:0};
+    groups[k].total++; const s = statusOf(e.expiry); if (s !== "ok") groups[k][s]++;
+  }
+  const gl = Object.entries(groups).sort((a,b) => (b[1].exp*1000+b[1].due) - (a[1].exp*1000+a[1].due)).slice(0, 12);
+  const next = S.emps.filter(e => statusOf(e.expiry) !== "ok").slice(0, 8);
+  return header("Dashboard", `${scopeText()} · ${c.total.toLocaleString()} employees tracked`) + `
+  <div class="kpis">
+    <div class="card kpi" onclick="quick('')"><div class="l"><span class="dot" style="background:var(--ink)"></span>Total employees</div><div class="v mono">${c.total.toLocaleString()}</div><div class="s">${isAdmin() ? S.managers.filter(m=>m.role==="manager").length + " area managers" : new Set(S.emps.map(e=>e.store)).size + " stores"}</div></div>
+    <div class="card kpi" onclick="quick('exp')"><div class="l"><span class="dot" style="background:var(--red)"></span>Expired</div><div class="v mono" style="color:var(--red)">${c.exp.toLocaleString()}</div><div class="s">Renew now</div></div>
+    <div class="card kpi" onclick="quick('due')"><div class="l"><span class="dot" style="background:var(--amber)"></span>Due within 30 days</div><div class="v mono" style="color:var(--amber)">${c.due.toLocaleString()}</div><div class="s">Book renewals</div></div>
+    <div class="card kpi" onclick="quick('ok')"><div class="l"><span class="dot" style="background:var(--teal-d)"></span>OK</div><div class="v mono" style="color:var(--teal-d)">${c.ok.toLocaleString()}</div><div class="s">More than 30 days left</div></div>
+  </div>
+  <div class="card pad" style="margin-bottom:16px">
+    <h3>Overall status</h3>
+    <div class="bar"><span style="width:${pct(c.exp)}%;background:var(--red)"></span><span style="width:${pct(c.due)}%;background:var(--tan-d)"></span><span style="width:${pct(c.ok)}%;background:var(--teal)"></span></div>
+    <div class="legend"><span><span class="dot" style="background:var(--red)"></span> Expired <b>${pct(c.exp).toFixed(1)}%</b></span><span><span class="dot" style="background:var(--tan-d)"></span> Due ≤ 30 days <b>${pct(c.due).toFixed(1)}%</b></span><span><span class="dot" style="background:var(--teal)"></span> OK <b>${pct(c.ok).toFixed(1)}%</b></span></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="pad" style="padding-bottom:6px"><h3>Needs action soonest</h3></div>
+      ${next.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th>Status</th></tr></thead><tbody>
+      ${next.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="mono">${fmtDate(e.expiry)}<div class="sub">${relDays(e.expiry)}</div></td><td>${pill(e.expiry)}</td></tr>`).join("")}
+      </tbody></table></div><div class="pager"><span>Showing the 8 most urgent</span><button class="btn sm ghost" onclick="go('alerts')">See all alerts</button></div>` : `<div class="empty">Nothing expired or due in the next 30 days. 🎉</div>`}
+    </div>
+    <div class="card"><div class="pad" style="padding-bottom:6px"><h3>${isAdmin() ? "By area manager" : "By store"}</h3></div>
+      ${gl.length ? `<div class="tbl-wrap"><table><thead><tr><th>${isAdmin()?"Area manager":"Store"}</th><th>Staff</th><th>Expired</th><th>Due</th></tr></thead><tbody>
+      ${gl.map(([k,v]) => `<tr><td><b>${esc(k)}</b></td><td class="mono">${v.total}</td><td class="mono" style="color:${v.exp?"var(--red)":"var(--muted)"};font-weight:${v.exp?700:400}">${v.exp}</td><td class="mono" style="color:${v.due?"var(--amber)":"var(--muted)"};font-weight:${v.due?700:400}">${v.due}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="empty">No employees yet. Start with <a href="#import">Import</a>.</div>`}
+    </div>
+  </div>`;
+}
+function quick(st){ S.filters = {q:"",store:"",status:st,mgr:""}; go("employees"); }
+
+// ---------- employees ----------
+function filtered(){
+  const {q,store,status,mgr} = S.filters; const ql = q.trim().toLowerCase();
+  return S.emps.filter(e =>
+    (!ql || e.name.toLowerCase().includes(ql) || e.employee_id.toLowerCase().includes(ql) || String(e.iqama).includes(ql)) &&
+    (!store || e.store === store) && (!status || statusOf(e.expiry) === status) && (!mgr || e.manager_id === mgr));
+}
+function employees(){
+  const list = filtered(); const per = 50; const pages = Math.max(1, Math.ceil(list.length / per));
+  S.page = Math.min(S.page, pages); const slice = list.slice((S.page-1)*per, S.page*per);
+  const stores = [...new Set(S.emps.map(e => e.store).filter(Boolean))].sort();
+  const f = S.filters;
+  return header("Employees", `${scopeText()} · add, edit and search staff`, `<button class="btn ghost" onclick="exportCSV()">Export list</button><button class="btn" onclick="editEmp()">+ Add employee</button>`) + `
+  <div class="filters">
+    <input id="fq" type="search" placeholder="Search name, Employee ID or Iqama…" value="${esc(f.q)}" oninput="S.filters.q=this.value;S.page=1;render()">
+    <select onchange="S.filters.store=this.value;S.page=1;render()"><option value="">All stores</option>${stores.map(s => `<option ${f.store===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
+    <select onchange="S.filters.status=this.value;S.page=1;render()"><option value="">All statuses</option><option value="exp" ${f.status==="exp"?"selected":""}>Expired</option><option value="due" ${f.status==="due"?"selected":""}>Due ≤ 30 days</option><option value="ok" ${f.status==="ok"?"selected":""}>OK</option></select>
+    ${isAdmin() ? `<select onchange="S.filters.mgr=this.value;S.page=1;render()"><option value="">All area managers</option>${S.managers.map(m => `<option value="${m.id}" ${f.mgr===m.id?"selected":""}>${esc(m.full_name||m.email)}</option>`).join("")}</select>` : ""}
+  </div>
+  <div class="card">${slice.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Iqama</th><th class="hm">Store</th>${isAdmin()?"<th class=\"hm\">Area manager</th>":""}<th>Baladiya expiry</th><th>Status</th><th></th></tr></thead><tbody>
+    ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">ID ${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="mono hm">${esc(maskIq(e.iqama))}</td><td class="hm">${esc(e.store)}</td>${isAdmin()?`<td class="hm">${esc(mgrName(e.manager_id))}</td>`:""}<td class="mono">${fmtDate(e.expiry)}<div class="sub">${relDays(e.expiry)}</div></td><td>${pill(e.expiry)}</td>
+    <td style="white-space:nowrap;text-align:right"><button class="icon-btn" title="Edit" aria-label="Edit" onclick="editEmp('${e.id}')">${ICON.edit}</button><button class="icon-btn" title="Delete" aria-label="Delete" onclick="delEmp('${e.id}')">${ICON.trash}</button></td></tr>`).join("")}
+  </tbody></table></div>
+  <div class="pager"><span>${list.length.toLocaleString()} employee${list.length===1?"":"s"} · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>`
+  : `<div class="empty">${S.emps.length ? "No employees match these filters." : "No employees yet. Add one, or use <a href='#import'>Import</a> for many."}</div>`}</div>`;
+}
+function editEmp(id){
+  const e = id ? S.emps.find(x => x.id === id) : { employee_id:"", name:"", iqama:"", store:"", expiry:"", notes:"", manager_id: S.me.id };
+  modal(`<h3>${id ? "Edit employee" : "Add employee"}</h3>
+    <form id="ef">
+      <div class="row2"><div><label>Employee ID</label><input type="text" name="employee_id" required value="${esc(e.employee_id)}" ${id?"":"autofocus"}></div>
+      <div><label>Iqama number</label><input type="text" name="iqama" inputmode="numeric" value="${esc(e.iqama)}"></div></div>
+      <label>Employee name</label><input type="text" name="name" required value="${esc(e.name)}">
+      <div class="row2"><div><label>Store</label><input type="text" name="store" list="storeList" value="${esc(e.store)}"></div>
+      <div><label>Baladiya expiry date</label><input type="date" name="expiry" required value="${esc(e.expiry)}"></div></div>
+      <datalist id="storeList">${[...new Set(S.emps.map(x=>x.store).filter(Boolean))].map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
+      ${isAdmin() ? `<label>Area manager</label><select name="manager_id">${S.managers.map(m => `<option value="${m.id}" ${e.manager_id===m.id?"selected":""}>${esc(m.full_name||m.email)}${m.role==="admin"?" (admin)":""}</option>`).join("")}</select>` : ""}
+      <label>Notes (optional)</label><textarea name="notes" rows="2">${esc(e.notes)}</textarea>
+      <div class="err" id="eerr"></div>
+      <div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn">${id ? "Save changes" : "Add employee"}</button></div>
+    </form>`);
+  $("#ef").onsubmit = async ev => {
+    ev.preventDefault(); const fd = Object.fromEntries(new FormData(ev.target));
+    for (const k of ["employee_id","name","iqama","store","notes"]) fd[k] = (fd[k]||"").trim();
+    if (!isAdmin()) fd.manager_id = id ? e.manager_id : S.me.id;
+    const q = id ? sb.from("trackit_employees").update(fd).eq("id", id) : sb.from("trackit_employees").insert(fd);
+    const { error } = await q;
+    if (error) { $("#eerr").textContent = error.code === "23505" ? "That Employee ID is already in Trackit (it may belong to another area manager)." : error.message; return; }
+    closeModal(); toast(id ? "Saved" : "Employee added"); await loadAll(); render();
+  };
+}
+function delEmp(id){
+  const e = S.emps.find(x => x.id === id);
+  modal(`<h3>Delete ${esc(e.name)}?</h3><p class="note">This removes Employee ID ${esc(e.employee_id)} from Trackit. It can't be undone.</p>
+  <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="dbtn">Delete</button></div>`);
+  $("#dbtn").onclick = async () => { const { error } = await sb.from("trackit_employees").delete().eq("id", id); if (error) return toast(error.message); closeModal(); toast("Deleted"); await loadAll(); render(); };
+}
+function exportCSV(){
+  const list = filtered();
+  const head = ["Employee ID","Employee Name","Iqama Number","Store","Baladiya Expiry Date","Status","Notes"].concat(isAdmin()?["Area Manager"]:[]);
+  const rows = list.map(e => [e.employee_id, e.name, e.iqama, e.store, e.expiry, {exp:"Expired",due:"Due within 30 days",ok:"OK"}[statusOf(e.expiry)], e.notes].concat(isAdmin()?[mgrName(e.manager_id)]:[]));
+  downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [head, ...rows]);
+}
+function downloadCSV(name, rows){
+  const csv = "﻿" + rows.map(r => r.map(v => { v = String(v ?? ""); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(",")).join("\r\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"})); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// ---------- import ----------
+const TEMPLATE_HEAD = () => ["Employee ID","Employee Name","Iqama Number","Store","Baladiya Expiry Date","Notes"].concat(isAdmin()?["Area Manager Email"]:[]);
+function importView(){
+  return header("Import employees", "Download the template, fill it in Excel, then upload it here") + `
+  <div class="steps">
+    <div class="card pad"><div class="step-n">1</div><h3>Download the template</h3>
+      <p class="note">Columns: ${TEMPLATE_HEAD().map(h=>`<code>${h}</code>`).join(" ")}</p>
+      <p class="note">Write dates as <b>YYYY-MM-DD</b> (for example 2026-11-05). Excel dates and DD/MM/YYYY also work.${isAdmin()?" Leave <b>Area Manager Email</b> empty to keep an employee with their current manager.":""}</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn tan" onclick="downloadTemplate()">Download template (.csv)</button>
+      ${S.emps.length ? `<button class="btn ghost" onclick="exportCSVforUpdate()">Download my current list</button>` : ""}</div>
+    </div>
+    <div class="card pad"><div class="step-n">2</div><h3>Upload the filled file</h3>
+      <p class="note">CSV or Excel (.xlsx). Rows are matched by <b>Employee ID</b>: new IDs are added, changed rows are updated, and unchanged rows are skipped.</p>
+      <label class="drop" id="drop"><input type="file" id="file" accept=".csv,.xlsx,.xls" class="hidden"><b>Choose a file</b><div class="note">or drag it here</div></label>
+      <div id="impOut"></div>
+    </div>
+  </div>`;
+}
+function downloadTemplate(){
+  const ex = isAdmin() ? ["E10234","Mohammed Ali","2412345678","Olaya Branch","2026-11-05","Example row – delete before uploading",""] : ["E10234","Mohammed Ali","2412345678","Olaya Branch","2026-11-05","Example row – delete before uploading"];
+  downloadCSV("trackit-template.csv", [TEMPLATE_HEAD(), ex]);
+}
+function exportCSVforUpdate(){
+  downloadCSV("trackit-my-list.csv", [TEMPLATE_HEAD(), ...S.emps.map(e => [e.employee_id,e.name,e.iqama,e.store,e.expiry,e.notes].concat(isAdmin()?[S.managers.find(m=>m.id===e.manager_id)?.email||""]:[]))]);
+}
+function bindDrop(){
+  const d = $("#drop"), f = $("#file");
+  f.onchange = () => f.files[0] && handleFile(f.files[0]);
+  d.ondragover = e => { e.preventDefault(); d.classList.add("over"); };
+  d.ondragleave = () => d.classList.remove("over");
+  d.ondrop = e => { e.preventDefault(); d.classList.remove("over"); e.dataTransfer.files[0] && handleFile(e.dataTransfer.files[0]); };
+}
+const HEADER_MAP = {
+  employee_id:["employee id","emp id","employee no","employee number","employee_id","id","emp no","staff id"],
+  name:["employee name","name","full name","employee_name"],
+  iqama:["iqama number","iqama","iqama no","iqama_number","iqama id"],
+  store:["store","branch","store name","location"],
+  expiry:["baladiya expiry date","expiry date","baladiya expiry","expiry","expiration date","baladiya card expiry","health card expiry","expiry_date"],
+  notes:["notes","note","remarks","comments"],
+  manager_email:["area manager email","manager email","am email","area manager"],
+};
+function normDate(v){
+  if (v === null || v === undefined || v === "") return "";
+  if (v instanceof Date && !isNaN(v)) return `${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,"0")}-${String(v.getDate()).padStart(2,"0")}`;
+  if (typeof v === "number") { const d = XLSX.SSF.parse_date_code(v); return d ? `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}` : ""; }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/); if (m) return `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/); if (m) return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; // DD/MM/YYYY
+  return s; // server will reject anything else with a clear message
+}
+async function handleFile(file){
+  const out = $("#impOut");
+  out.innerHTML = `<p class="note" style="margin-top:14px">Reading ${esc(file.name)}…</p>`;
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type:"array", cellDates:true, raw:false, dateNF:"yyyy-mm-dd" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header:1, defval:"", raw:true });
+    if (aoa.length < 2) throw new Error("The file is empty.");
+    const head = aoa[0].map(h => String(h).trim().toLowerCase());
+    const idx = {};
+    for (const [k, names] of Object.entries(HEADER_MAP)) idx[k] = head.findIndex(h => names.includes(h));
+    const missing = ["employee_id","name","expiry"].filter(k => idx[k] < 0);
+    if (missing.length) throw new Error("Missing column(s): " + missing.map(k => ({employee_id:"Employee ID",name:"Employee Name",expiry:"Baladiya Expiry Date"})[k]).join(", ") + ". Please use the template.");
+    const rows = [];
+    aoa.slice(1).forEach((r, i) => {
+      if (r.every(c => String(c).trim() === "")) return;
+      const get = k => idx[k] >= 0 ? r[idx[k]] : "";
+      if (/example row/i.test(String(get("notes")))) return;
+      rows.push({ row: i + 2, employee_id: String(get("employee_id")).trim(), name: String(get("name")).trim(), iqama: String(get("iqama")).trim(),
+        store: String(get("store")).trim(), expiry: normDate(get("expiry")), notes: String(get("notes")).trim(),
+        manager_email: isAdmin() ? String(get("manager_email")).trim() : "" });
+    });
+    if (!rows.length) throw new Error("No rows found under the headings.");
+    const dup = {}; rows.forEach(r => dup[r.employee_id] = (dup[r.employee_id]||0) + 1);
+    const dups = Object.entries(dup).filter(([k,v]) => k && v > 1).map(([k]) => k);
+    const tot = { added:0, updated:0, skipped:0, errors:[] };
+    if (dups.length) dups.forEach(d => tot.errors.push({ row: rows.filter(r => r.employee_id === d).map(r => r.row).join(", "), msg: `Employee ID ${d} appears more than once in the file — only the last one was used` }));
+    // keep the last occurrence of duplicates
+    const seen = new Map(); rows.forEach(r => seen.set(r.employee_id || ("_" + r.row), r)); const clean = [...seen.values()];
+    for (let i = 0; i < clean.length; i += 1000) {
+      out.innerHTML = `<p class="note" style="margin-top:14px">Uploading ${Math.min(i + 1000, clean.length).toLocaleString()} of ${clean.length.toLocaleString()} rows…</p>`;
+      const { data, error } = await sb.rpc("trackit_import", { rows: clean.slice(i, i + 1000) });
+      if (error) throw new Error(error.message);
+      tot.added += data.added; tot.updated += data.updated; tot.skipped += data.skipped; tot.errors.push(...data.errors);
+    }
+    out.innerHTML = `<div class="summary"><div><b style="color:var(--teal-d)">${tot.added}</b>added</div><div><b style="color:var(--tan-d)">${tot.updated}</b>updated</div><div><b>${tot.skipped}</b>unchanged</div><div><b style="color:${tot.errors.length?"var(--red)":"var(--muted)"}">${tot.errors.length}</b>problems</div></div>
+      ${tot.errors.length ? `<div class="errlist">${tot.errors.slice(0,300).map(e => `<div>Row ${esc(e.row)}: ${esc(e.msg)}</div>`).join("")}</div><p class="note">Fix these rows in your file and upload it again. Rows already saved will show as unchanged.</p>` : `<p class="note">All done. The dashboards update for everyone automatically.</p>`}`;
+    toast("Import finished");
+    await loadAll(); renderNav();
+  } catch (e) {
+    out.innerHTML = `<div class="errlist" style="margin-top:14px">${esc(e.message || e)}</div>`;
+  }
+  $("#file").value = "";
+}
+
+// ---------- alerts ----------
+function alerts(){
+  const due = S.emps.filter(e => statusOf(e.expiry) === "due"), exp = S.emps.filter(e => statusOf(e.expiry) === "exp").sort((a,b) => a.expiry < b.expiry ? -1 : 1);
+  const list = S.alertTab === "due" ? due : exp;
+  return header("Alerts", `${scopeText()} · Baladiya cards that need action`) + `
+  <div class="tabs"><button class="${S.alertTab==="due"?"on":""}" onclick="S.alertTab='due';render()">Due within 30 days (${due.length})</button><button class="${S.alertTab==="exp"?"on":""}" onclick="S.alertTab='exp';render()">Expired (${exp.length})</button></div>
+  <div class="card">${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th>${isAdmin()?"<th class=\"hm\">Area manager</th>":""}<th>Baladiya expiry</th><th class="hm">Status</th><th></th></tr></thead><tbody>
+  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">ID ${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td>${isAdmin()?`<td class="hm">${esc(mgrName(e.manager_id))}</td>`:""}<td class="mono">${fmtDate(e.expiry)}<div class="sub">${relDays(e.expiry)}</div></td><td class="hm">${pill(e.expiry)}</td><td style="text-align:right"><button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
+  </tbody></table></div>` : `<div class="empty">${S.alertTab==="due" ? "Nothing due in the next 30 days." : "No expired cards. 🎉"}</div>`}</div>`;
+}
+
+// ---------- assistant ----------
+function md(t){
+  const lines = esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|\s)\*(?!\s)(.+?)\*(?=\s|$)/g, "$1$2").replace(/^#+\s*/gm, "").split(/\n/);
+  let h = "", inList = false;
+  for (const l of lines) {
+    const m = l.match(/^\s*(?:[-•*]|\d+[.)])\s+(.*)/);
+    if (m) { if (!inList) { h += "<ul>"; inList = true; } h += `<li>${m[1]}</li>`; }
+    else { if (inList) { h += "</ul>"; inList = false; } if (l.trim()) h += `<p>${l}</p>`; }
+  }
+  return h + (inList ? "</ul>" : "");
+}
+function assistant(){
+  return header("AI Assistant", "Ask about Baladiya renewals in plain words") + `
+  <div class="card chat"><div class="msgs" id="msgs"></div>
+  <div class="chips" id="chips">${["Who expires this week?","Which store has the most expired cards?","List everyone due in the next 30 days","Give me a renewal plan for this month"].map(q => `<button onclick="ask(this.textContent)">${q}</button>`).join("")}</div>
+  <form class="composer" onsubmit="event.preventDefault();ask($('#cq').value)"><input id="cq" type="text" placeholder="Ask about your employees…" autocomplete="off"><button class="btn">Send</button></form></div>
+  <p class="note" style="margin-top:10px">The assistant only sees names, stores and dates — never Iqama numbers. Free AI has a daily limit.</p>`;
+}
+function afterChat(){
+  const box = $("#msgs");
+  box.innerHTML = S.chat.length ? S.chat.map(m => `<div class="msg ${m.role==="user"?"u":"a"}">${m.role==="user" ? esc(m.content) : md(m.content)}</div>`).join("")
+    : `<div class="empty">Hi ${esc((S.me.full_name||"").split(" ")[0] || "")}! Ask me who needs a Baladiya renewal, which stores are behind, or for a renewal plan.</div>`;
+  if (S.busy) box.innerHTML += `<div class="typing">Thinking…</div>`;
+  const chips = $("#chips"); if (chips) chips.style.display = S.chat.length ? "none" : "";
+  box.scrollTop = box.scrollHeight;
+}
+async function ask(q){
+  q = (q || "").trim(); if (!q || S.busy) return;
+  S.chat.push({ role:"user", content:q }); S.busy = true; if ($("#cq")) $("#cq").value = ""; afterChat();
+  const { data, error } = await sb.functions.invoke("trackit-ask", { body: { question: q, history: S.chat.slice(0, -1) } });
+  S.busy = false;
+  let msg = data?.answer;
+  if (!msg) { let detail = data?.error; if (!detail && error?.context?.json) { try { detail = (await error.context.json()).error; } catch {} } msg = "Sorry — " + (detail || "the assistant isn't available right now."); }
+  S.chat.push({ role:"assistant", content: msg });
+  if (S.view === "assistant") afterChat();
+}
+
+// ---------- area managers (admin) ----------
+function managers(){
+  const cnt = id => S.emps.filter(e => e.manager_id === id).length;
+  const issues = id => S.emps.filter(e => e.manager_id === id && statusOf(e.expiry) !== "ok").length;
+  return header("Area Managers", "Create logins and see each manager's workload", `<button class="btn" onclick="addMgr()">+ Add area manager</button>`) + `
+  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th class="hm">Email</th><th class="hm">Role</th><th>Staff</th><th><span class="hm">Expired + due</span><span class="sm-only">Exp + due</span></th><th></th></tr></thead><tbody>
+  ${S.managers.map(m => `<tr><td><b>${esc(m.full_name || "—")}</b><div class="sub sm-only">${esc(m.email)}${m.role==="admin"?" · Admin":""}</div></td><td class="hm">${esc(m.email)}</td><td class="hm">${m.role==="admin"?"Admin":"Area Manager"}</td><td class="mono">${cnt(m.id)}</td><td class="mono" style="color:${issues(m.id)?"var(--red)":"var(--muted)"}">${issues(m.id)}</td>
+  <td style="white-space:nowrap;text-align:right"><button class="btn sm ghost" onclick="resetPw('${m.id}')"><span class="hm">Reset password</span><span class="sm-only" title="Reset password" aria-label="Reset password"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:block"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2"/></svg></span></button> ${m.id!==S.me.id?`<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delMgr('${m.id}')">${ICON.trash}</button>`:""}</td></tr>`).join("")}
+  </tbody></table></div></div>
+  <p class="note" style="margin-top:12px">Area managers sign in with the email and password you set here. Share the password with them privately; they can't see other managers' staff.</p>`;
+}
+async function adminCall(body){
+  const { data, error } = await sb.functions.invoke("trackit-admin-users", { body });
+  if (data?.ok) return null;
+  let msg = data?.error; if (!msg && error?.context?.json) { try { msg = (await error.context.json()).error; } catch {} }
+  return msg || error?.message || "Something went wrong";
+}
+function addMgr(){
+  modal(`<h3>Add area manager</h3><form id="mf">
+    <label>Full name</label><input type="text" name="full_name" required>
+    <label>Email</label><input type="email" name="email" required>
+    <label>Starting password (min 8 characters)</label><input type="text" name="password" required minlength="8" autocomplete="off">
+    <label>Role</label><select name="role"><option value="manager">Area Manager (own staff only)</option><option value="admin">Admin (everything)</option></select>
+    <div class="err" id="merr"></div>
+    <div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" id="mbtn">Create login</button></div></form>`);
+  $("#mf").onsubmit = async ev => { ev.preventDefault(); $("#mbtn").disabled = true;
+    const err = await adminCall({ action:"create", ...Object.fromEntries(new FormData(ev.target)) });
+    $("#mbtn").disabled = false; if (err) return $("#merr").textContent = err;
+    closeModal(); toast("Login created"); await loadAll(); render(); };
+}
+function resetPw(id){
+  const m = S.managers.find(x => x.id === id);
+  modal(`<h3>Reset password</h3><p class="note">For ${esc(m.full_name || m.email)}</p><form id="rf"><label>New password (min 8 characters)</label><input type="text" name="password" required minlength="8" autocomplete="off">
+  <div class="err" id="rerr"></div><div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn">Save password</button></div></form>`);
+  $("#rf").onsubmit = async ev => { ev.preventDefault(); const err = await adminCall({ action:"reset_password", id, password: new FormData(ev.target).get("password") }); if (err) return $("#rerr").textContent = err; closeModal(); toast("Password updated"); };
+}
+function delMgr(id){
+  const m = S.managers.find(x => x.id === id); const n = S.emps.filter(e => e.manager_id === id).length;
+  modal(`<h3>Remove ${esc(m.full_name || m.email)}?</h3><p class="note">Their login will stop working.${n ? ` They have <b>${n}</b> employees — choose who takes them over:` : ""}</p>
+  ${n ? `<select id="reas">${S.managers.filter(x => x.id !== id).map(x => `<option value="${x.id}">${esc(x.full_name||x.email)}</option>`).join("")}</select>` : ""}
+  <div class="err" id="derr"></div><div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="dm">Remove</button></div>`);
+  $("#dm").onclick = async () => { const err = await adminCall({ action:"delete", id, reassign_to: $("#reas")?.value }); if (err) return $("#derr").textContent = err; closeModal(); toast("Removed"); await loadAll(); render(); };
+}
+
+// ---------- modal ----------
+function modal(html){ $("#modalRoot").innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`; const f = $("#modalRoot input,#modalRoot select"); f && f.focus(); }
+function closeModal(){ $("#modalRoot").innerHTML = ""; }
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+// ---------- start ----------
+sb.auth.getSession().then(({ data }) => data.session ? boot(data.session) : show("login"));
+</script>
+</body>
+</html>
