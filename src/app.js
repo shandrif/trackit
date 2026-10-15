@@ -56,7 +56,11 @@ $("#loginForm").addEventListener("submit", async e => {
 });
 async function signOut(){ if (S.channel) sb.removeChannel(S.channel); await sb.auth.signOut(); location.reload(); }
 sb.auth.onAuthStateChange((ev, session) => { setTimeout(() => { if (ev === "SIGNED_IN" && !S.me && !S.booting) boot(session); if (ev === "SIGNED_OUT") { if (S.me) location.reload(); else show("login"); } }, 0); });
-function show(which){ ["login","noaccess","shell"].forEach(id => $("#"+id).classList.toggle("hidden", id !== which)); }
+function show(which){ ["login","noaccess","shell"].forEach(id => $("#"+id).classList.toggle("hidden", id !== which)); if (which !== "shell") hideSplash(); }
+function hideSplash(){ const s = $("#splash"); if (!s || s.dataset.out) return; s.dataset.out = "1"; s.classList.add("out"); setTimeout(() => s.remove(), 400); }
+setTimeout(hideSplash, 15000);
+let xlsxP = null;
+function needXLSX(){ if (window.XLSX) return Promise.resolve(); return xlsxP || (xlsxP = new Promise((ok, bad) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; s.onload = () => ok(); s.onerror = () => { xlsxP = null; s.remove(); bad(new Error("Couldn't load the Excel reader. Check your internet and try again.")); }; document.head.appendChild(s); })); }
 async function boot(session){ if (S.booting || S.me) return; S.booting = true; try { await bootInner(session); } finally { S.booting = false; } }
 async function bootInner(session){
   if (!session) { const { data } = await sb.auth.getSession(); session = data.session; }
@@ -70,9 +74,10 @@ async function bootInner(session){
   show("shell");
   await loadAll(); subscribe();
   go(location.hash.slice(1) || "dashboard");
+  hideSplash();
 }
 
-function showConnError(){
+function showConnError(){ hideSplash();
   const box = $("#noaccess .login-card");
   box.innerHTML = `<div class="brand"><img class="logo" src="icon.svg" alt="Trackit"><div><b>Trackit</b></div></div>
     <h1>Couldn't connect</h1><p>Trackit couldn't reach the server. Check your internet connection and try again.</p>
@@ -279,6 +284,7 @@ function normNationality(v){
 }
 function normMobile(v){ return String(v||"").replace(/\D/g,"").replace(/^(00)?966/, "").replace(/^0+/, ""); }
 async function readWorkbook(file){
+  await needXLSX();
   const wb = XLSX.read(await file.arrayBuffer(), { type:"array", cellDates:true });
   const rows = []; const sheets = [];
   for (const name of wb.SheetNames) {
@@ -315,6 +321,7 @@ function analyse(rows){
 }
 // ---------- import: screen ----------
 function importView(){
+  needXLSX().catch(() => {});
   if (S.imp) return S.imp.result ? importResult() : importPreview();
   return header("Import", "Upload the weekly Baladiya file") + `
   <div class="steps">
@@ -348,7 +355,8 @@ function wipeAll(){
     closeModal(); S.imp = null; await loadAll(); render(); toast("All uploaded data deleted");
   };
 }
-function downloadTemplate(withData){
+async function downloadTemplate(withData){
+  try { await needXLSX(); } catch (e) { return toast(e.message); }
   const data = withData ? S.emps.map(e => { const r = empRow(e); r[5] = e.expiry ? new Date(e.expiry + "T00:00:00") : ""; return r; }) : [];
   const ws = XLSX.utils.aoa_to_sheet([COLS, ...data], { cellDates:true });
   ws["!cols"] = [16,30,26,16,14,14,16,40].map(w => ({ wch:w }));

@@ -11,8 +11,6 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#111111">
 <meta name="apple-mobile-web-app-title" content="Trackit">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
   --bg:#F5EDE3; --card:#FFFDF9; --ink:#111111; --muted:#6E655B; --line:#E4D7C5;
@@ -171,6 +169,30 @@ td.mono{white-space:nowrap}
 </style>
 </head>
 <body>
+<div id="splash" aria-label="Loading Trackit" role="status">
+  <div class="sp-box">
+    <svg class="sp-logo" viewBox="0 0 512 512" aria-hidden="true">
+      <defs>
+        <linearGradient id="spg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00C7B7"/><stop offset="1" stop-color="#5B5CF6"/></linearGradient>
+        <mask id="spcut"><rect width="512" height="512" fill="#fff"/><circle cx="366" cy="356" r="110" fill="#000"/></mask>
+      </defs>
+      <rect width="512" height="512" rx="116" fill="url(#spg)"/>
+      <g mask="url(#spcut)" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="104" y="124" width="268" height="250" rx="40"/><path d="M104 188h268"/>
+      </g>
+      <g fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M170 96v52M306 96v52"/>
+        <path class="sp-draw d1" pathLength="1" d="M262 236l18 18 36-38"/>
+        <g class="sp-spin"><path class="sp-draw d2" pathLength="1" d="M430 302A84 84 0 1 1 381 273"/><path class="sp-draw d3" pathLength="1" d="M364 250l26 24-26 25"/></g>
+        <path class="sp-draw d4" pathLength="1" d="M330 358l24 24 44-46"/>
+      </g>
+      <g fill="#fff"><rect x="146" y="220" width="36" height="32" rx="9"/><rect x="202" y="220" width="36" height="32" rx="9"/><rect x="146" y="272" width="36" height="32" rx="9"/><rect x="202" y="272" width="36" height="32" rx="9"/></g>
+      <circle cx="446" cy="334" r="10" fill="#fff"/>
+    </svg>
+    <div class="sp-name">Trackit</div>
+    <div class="sp-bar"><i></i></div>
+  </div>
+</div>
 
 <!-- LOGIN -->
 <section id="login" class="hidden">
@@ -209,6 +231,7 @@ td.mono{white-space:nowrap}
 </div>
 
 <div id="modalRoot"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 
 <script>
 // ---------- config ----------
