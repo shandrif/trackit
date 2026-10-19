@@ -7,44 +7,61 @@ const cors = {
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 
-const PREFERRED = [
-  "openrouter/free",
-  "google/gemma-4-31b-it:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "google/gemma-4-26b-a4b-it:free",
-  "nvidia/nemotron-3.5-lightning:free",
-];
-// models that refuse apps like this one (e.g. "only available on agentic harnesses") or aren't chat models
-const SKIP = /inkling|safety|guard|code|omni|nano|2\.6b|embed|vision-only|audio/i;
-const blocked = new Set<string>();
-let cachedFree: string[] | null = null;
-let cachedAt = 0;
-async function freeModels(): Promise<string[]> {
-  if (cachedFree && Date.now() - cachedAt < 3600_000) return cachedFree.filter((m) => !blocked.has(m));
-  cachedAt = Date.now();
-  try {
-    const r = await fetch("https://openrouter.ai/api/v1/models");
-    const j = await r.json();
-    const ids: string[] = (j.data || []).map((m: any) => m.id).filter((id: string) => id.endsWith(":free"));
-    const pref = PREFERRED.filter((p) => p === "openrouter/free" || ids.includes(p));
-    const rest = ids.filter((id) => !pref.includes(id) && !SKIP.test(id));
-    cachedFree = [...pref, ...rest].slice(0, 12);
-  } catch { cachedFree = PREFERRED; }
-  const list = (cachedFree.length ? cachedFree : PREFERRED).filter((m) => !blocked.has(m));
-  return list.length ? list : PREFERRED;
-}
-
-// Find the OpenRouter key even if the secret name has a small typo or stray spaces.
-function findKey(): { key: string | null; names: string[] } {
-  const exact = Deno.env.get("OPENROUTER_API_KEY");
-  if (exact && exact.trim()) return { key: exact.trim(), names: ["OPENROUTER_API_KEY"] };
+// ---------- Google Gemini ----------
+function geminiKey(): string | null {
   const env = Deno.env.toObject();
-  const names = Object.keys(env).filter((k) => /open.?router|^or_|api_?key/i.test(k) && !/^SUPABASE/i.test(k));
-  for (const n of names) {
-    const v = (env[n] || "").trim();
-    if (v.startsWith("sk-or-")) return { key: v, names };
+  for (const n of ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GEMINI_API_KEY", "GEMINI_KEY"]) {
+    const v = (env[n] || "").trim(); if (v) return v;
   }
-  return { key: null, names };
+  for (const [k, v] of Object.entries(env)) if (/gemini|google.?ai/i.test(k) && (v || "").trim()) return v.trim();
+  for (const v of Object.values(env)) if ((v || "").trim().startsWith("AIza")) return v.trim();
+  return null;
+}
+let gemModels: string[] | null = null;
+let gemAt = 0;
+async function geminiModels(key: string): Promise<string[]> {
+  if (gemModels && Date.now() - gemAt < 3600_000) return gemModels;
+  gemAt = Date.now();
+  const fallback = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": key } });
+    const j = await r.json();
+    const ids: string[] = (j.models || [])
+      .filter((m: any) => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map((m: any) => String(m.name).replace(/^models\//, ""))
+      .filter((id: string) => /^gemini-[\d.]+-flash/.test(id) && !/image|tts|audio|live|thinking|exp|embed|native/i.test(id));
+    const ver = (id: string) => parseFloat((id.match(/gemini-([\d.]+)/) || [])[1] || "0");
+    const score = (id: string) => ver(id) * 10 - (/lite/.test(id) ? 3 : 0) - (/preview/.test(id) ? 1 : 0) - (/-\d{3,}$|-\d{2}-\d{4}$/.test(id) ? 0.5 : 0);
+    ids.sort((x, y) => score(y) - score(x));
+    gemModels = ids.length ? ids.slice(0, 5) : fallback;
+  } catch { gemModels = fallback; }
+  return gemModels;
+}
+const busyUntil = new Map<string, number>(); // models that said "high demand" are skipped for a few minutes
+const noThinkCfg = new Set<string>();         // models that don't accept the "think briefly" setting
+async function askGemini(key: string, model: string, system: string, turns: { role: string; content: string }[]): Promise<{ answer?: string; status: number; body?: string }> {
+  const call = (thinking: boolean) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: turns.map((t) => ({ role: t.role === "assistant" ? "model" : "user", parts: [{ text: t.content }] })),
+      generationConfig: { temperature: 0.2, maxOutputTokens: 4096, ...(thinking ? { thinkingConfig: /gemini-2\./.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "low" } } : {}) },
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  let r = await call(!noThinkCfg.has(model));
+  if (r.status === 400 && !noThinkCfg.has(model)) {
+    const b = await r.text();
+    if (/think/i.test(b)) { noThinkCfg.add(model); r = await call(false); }
+    else return { status: 400, body: b.slice(0, 300) };
+  }
+  if (r.status === 503 || r.status === 429) busyUntil.set(model, Date.now() + 5 * 60_000);
+  if (!r.ok) return { status: r.status, body: (await r.text()).slice(0, 300) };
+  const j = await r.json().catch(() => ({}));
+  const parts = j.candidates?.[0]?.content?.parts || [];
+  const answer = parts.filter((p: any) => !p.thought && p.text).map((p: any) => p.text).join("").trim();
+  return answer ? { answer, status: 200 } : { status: 200, body: "empty answer (" + (j.candidates?.[0]?.finishReason || "no reason") + ")" };
 }
 
 const DAY = 86400000;
@@ -56,17 +73,22 @@ function status(exp: string, today: number) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const { key, names } = findKey();
-    if (!key) {
-      const seen = names.length ? ` Secrets found with a similar name: ${names.join(", ")} (but none holds a key starting with sk-or-).` : " No secret with a similar name was found in this project.";
-      return json({ error: "The AI key hasn't been added yet. Ask the admin to add OPENROUTER_API_KEY." + seen }, 503);
-    }
+    const gkey = geminiKey();
+    if (!gkey) return json({ error: "The AI key hasn't been added yet. Ask the admin to add GEMINI_API_KEY in Supabase." }, 503);
     const auth = req.headers.get("Authorization") || "";
     const service = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
-    const { data: u } = await service.auth.getUser(auth.replace("Bearer ", ""));
-    if (!u?.user) return json({ error: "Not signed in" }, 401);
-    const { data: me } = await service.from("trackit_profiles").select("id,role").eq("id", u.user.id).maybeSingle();
-    if (!me) return json({ error: "Your login hasn't been added to Trackit yet." }, 403);
+    const testToken = req.headers.get("x-trackit-token") || "";
+    let isTest = false;
+    if (testToken) {
+      const { data: st } = await service.from("trackit_settings").select("cron_token").eq("id", 1).single();
+      if (!st || st.cron_token !== testToken) return json({ error: "Not allowed" }, 401);
+      isTest = true;
+    } else {
+      const { data: u } = await service.auth.getUser(auth.replace("Bearer ", ""));
+      if (!u?.user) return json({ error: "Not signed in" }, 401);
+      const { data: me } = await service.from("trackit_profiles").select("id,role").eq("id", u.user.id).maybeSingle();
+      if (!me) return json({ error: "Your login hasn't been added to Trackit yet." }, 403);
+    }
     const { question, history } = await req.json();
     if (!question || String(question).length > 600) return json({ error: "Please ask a shorter question." }, 400);
 
@@ -111,52 +133,29 @@ By store:\n${fmt(byStore, 150)}\n\nEveryone expired, due within 30 days, or with
     ];
 
     const fails: string[] = [];
-    let dailyCap = false;
-    const ask = async (model: string): Promise<Response | "retry" | "skip"> => {
-      let r: Response;
-      try {
-        r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "Trackit" },
-          body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 700 }),
-          signal: AbortSignal.timeout(25000),
-        });
-      } catch (err) { fails.push(`${model}: timeout`); console.log("openrouter fail", model, String(err)); return "skip"; }
-      if (r.ok) {
-        const j = await r.json().catch(() => ({}));
-        const answer = j.choices?.[0]?.message?.content?.trim();
-        if (answer) return json({ answer, model });
-        fails.push(`${model}: empty answer`);
-        return "skip";
-      }
-      const body = await r.text();
-      if (r.status === 401) return json({ error: "The OpenRouter key was rejected. Ask the admin to check it." }, 502);
-      if (r.status === 402) return json({ error: "OpenRouter says this account needs credit for this request." }, 502);
-      if (r.status === 429 && /per-day|per day|daily/i.test(body)) dailyCap = true;
-      if (r.status === 403 || r.status === 404 || r.status === 400) blocked.add(model);
-      fails.push(`${model}: ${r.status}`);
-      console.log("openrouter fail", model, r.status, body.slice(0, 300));
-      return r.status === 429 || r.status >= 500 ? "retry" : "skip";
-    };
-    const models = await freeModels();
-    let again: string[] = [];
-    for (const model of models) {
-      const res = await ask(model);
-      if (res instanceof Response) return res;
-      if (res === "retry") again.push(model);
-      if (dailyCap) break;
-    }
-    if (!dailyCap && again.length) {
-      await new Promise((r) => setTimeout(r, 2000));
-      for (const model of again.slice(0, 4)) {
-        const res = await ask(model);
-        if (res instanceof Response) return res;
-        if (dailyCap) break;
+    const t0 = Date.now();
+    const turns = messages.filter((m) => m.role !== "system") as { role: string; content: string }[];
+    while (turns.length > 1 && turns[0].role === "assistant") turns.shift(); // Gemini wants the chat to start with the user
+    const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
+    const all = await geminiModels(gkey);
+    const ready = all.filter((m) => (busyUntil.get(m) || 0) < Date.now());
+    const order = ready.length ? ready : all;
+    let quota = false;
+    for (let round = 0; round < 2; round++) {
+      if (round === 1) await new Promise((r) => setTimeout(r, 2000)); // everything busy: wait a moment, try once more
+      for (const model of order) {
+        let res: { answer?: string; status: number; body?: string };
+        try { res = await askGemini(gkey, model, system, turns); } catch (err) { res = { status: 0, body: String(err) }; }
+        if (res.answer) return json({ answer: res.answer, ...(isTest ? { model, ms: Date.now() - t0, models: order } : {}) });
+        fails.push(`${model}: ${res.status} ${res.body || ""}`.slice(0, 200));
+        console.log("gemini fail", model, res.status, res.body);
+        if ((res.status === 400 || res.status === 401 || res.status === 403) && /api.?key|permission|unauthenticated|forbidden/i.test(res.body || ""))
+          return json({ error: "Google rejected the Gemini key. Ask the admin to check GEMINI_API_KEY in Supabase.", ...(isTest ? { fails } : {}) }, 502);
+        if (res.status === 429 && /quota|per day|daily|limit/i.test(res.body || "")) quota = true;
       }
     }
-    console.log("all models failed:", fails.join("; "));
-    if (dailyCap) return json({ error: "The free AI limit for today has been reached. It resets tomorrow." }, 503);
-    return json({ error: "The free AI is busy right now. Please try again in a minute." }, 503);
+    if (quota) return json({ error: "Today's free Gemini limit has been reached. It resets tomorrow.", ...(isTest ? { fails } : {}) }, 503);
+    return json({ error: "The AI is busy right now. Please try again in a minute.", ...(isTest ? { fails } : {}) }, 503);
   } catch (e) {
     return json({ error: String((e as any)?.message || e) }, 500);
   }
