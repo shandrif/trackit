@@ -474,6 +474,7 @@ const SUPABASE_KEY = "sb_publishable_u2__PPq2nDZLyoNnLHxkVA_olltjpHc";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const DUE_DAYS = 30;
 const NATIONALITIES = ["Saudi","Bangladeshi","Indian","Filipino","Pakistani","Nepali","Egyptian","Sudanese","Yemeni","Eritrean","Sri Lankan","Jordanian","Syrian","Other"];
+const CARD_STATUSES = ["Training pending","Training done but card status not updated","Rescheduled for exam","Need to pay SAR 60"];
 const COLS = ["Employee ID","Name","Store","Iqama Number","Nationality","Expiry Date","Mobile Number","AM Remarks"];
 
 // ---------- state ----------
@@ -696,12 +697,17 @@ function employees(){
   : `<div class="empty">${S.emps.length ? "No employees match these filters." : "No employees yet. Use <a href='#import'>Import</a> to upload this week's file."}</div>`}</div>`;
 }
 function editEmp(id){
-  const e = id ? S.emps.find(x => x.id === id) : { employee_id:"", name:"", store:"", iqama:"", nationality:"", mobile:"", expiry:"", expiry_note:"", remarks:"" };
+  const e = id ? S.emps.find(x => x.id === id) : { employee_id:"", name:"", store:"", iqama:"", nationality:"", mobile:"", expiry:"", expiry_note:"", remarks:"", card_status:"" };
   const opts = (list, cur) => [...new Set([...list, cur].filter(Boolean))].map(n => `<option ${n===cur?"selected":""}>${esc(n)}</option>`).join("");
   modal(`<h3>${id ? esc(e.name) : "Add employee"}</h3>${id ? `<p class="note" style="margin-top:-8px">${pill(e)} ${contact(e)}</p>` : ""}
     <form id="ef">
       <div class="row2"><div><label>Expiry date</label><input type="date" name="expiry" value="${esc(e.expiry || "")}"></div>
       <div><label>AM remarks</label><input type="text" name="remarks" value="${esc(e.remarks)}" placeholder="e.g. medical booked for Sunday"></div></div>
+      ${(() => { const cs = e.card_status || "", known = !cs || CARD_STATUSES.includes(cs); return `<div class="row2"><div><label>Card status</label>
+        <select name="card_status_sel" id="csSel" onchange="$('#csCustomWrap').classList.toggle('hidden', this.value !== '__custom'); if (this.value === '__custom') $('#csCustom').focus()">
+          <option value="">—</option>${CARD_STATUSES.map(s => `<option value="${esc(s)}" ${s === cs ? "selected" : ""}>${esc(s)}</option>`).join("")}
+          <option value="__custom" ${known ? "" : "selected"}>Custom…</option></select></div>
+        <div id="csCustomWrap" class="${known ? "hidden" : ""}"><label>Custom status</label><input type="text" id="csCustom" name="card_status_custom" maxlength="120" value="${known ? "" : esc(cs)}" placeholder="Type the card status"></div></div>`; })()}
       ${!e.expiry && e.expiry_note ? `<p class="note">File said: <b>${esc(e.expiry_note)}</b>. Enter the real date when you have it.</p>` : ""}
       <div class="row2"><div><label>Employee ID</label><input type="text" name="employee_id" required value="${esc(e.employee_id)}"></div>
       <div><label>Name</label><input type="text" name="name" required value="${esc(e.name)}"></div></div>
@@ -715,7 +721,9 @@ function editEmp(id){
   $("#ef").onsubmit = async ev => {
     ev.preventDefault(); const fd = Object.fromEntries(new FormData(ev.target));
     const row = { employee_id: fd.employee_id.trim(), name: fd.name.trim(), store: fd.store.trim(), iqama: fd.iqama.trim(), nationality: fd.nationality,
-      mobile: fd.mobile.replace(/\D/g,""), expiry: fd.expiry || null, remarks: fd.remarks.trim() };
+      mobile: fd.mobile.replace(/\D/g,""), expiry: fd.expiry || null, remarks: fd.remarks.trim(),
+      card_status: fd.card_status_sel === "__custom" ? (fd.card_status_custom || "").trim() : (fd.card_status_sel || "") };
+    if (fd.card_status_sel === "__custom" && !row.card_status) { $("#eerr").textContent = "Type the custom card status, or pick one from the list."; return; }
     if (row.expiry) row.expiry_note = "";
     const { error } = id ? await sb.from("trackit_staff").update(row).eq("id", id) : await sb.from("trackit_staff").insert(row);
     if (error) { $("#eerr").textContent = error.code === "23505" ? "That Employee ID is already in Trackit." : error.message; return; }
