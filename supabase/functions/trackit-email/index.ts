@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
 
     const rows: any[] = [];
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await service.from("trackit_staff").select("employee_id,name,store,expiry").order("expiry").range(from, from + 999);
+      const { data, error } = await service.from("trackit_staff").select("employee_id,name,store,expiry").is("left_at", null).order("expiry").order("id").range(from, from + 999);
       if (error) return json({ error: error.message }, 500);
       rows.push(...(data || []));
       if (!data || data.length < 1000) break;

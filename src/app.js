@@ -8,7 +8,7 @@ const CARD_STATUSES = ["Training pending","Training done but card status not upd
 const COLS = ["Employee ID","Name","Store","Iqama Number","Nationality","Expiry Date","Mobile Number","AM Remarks"];
 
 // ---------- state ----------
-const S = { me:null, emps:[], weeks:[], profiles:[], view:"dashboard", page:1, filters:{q:"",store:"",status:""}, alertTab:"exp", chat:[], channel:null, imp:null };
+const S = { me:null, emps:[], left:[], weeks:[], profiles:[], view:"dashboard", page:1, filters:{q:"",store:"",status:"",cs:""}, alertTab:"exp", chat:[], channel:null, imp:null };
 
 // ---------- helpers ----------
 const $ = s => document.querySelector(s);
@@ -20,24 +20,38 @@ const STATUS_LABEL = { exp:"Expired", due:"Due ≤ 30 days", miss:"Date missing"
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const fmtDate = d => { if(!d) return ""; const [y,m,dd] = d.split("-"); return `${dd} ${MONTHS[+m-1]} ${y}`; };
 const relDays = d => { const n = daysLeft(d); return n < 0 ? `${-n} day${n===-1?"":"s"} ago` : n === 0 ? "today" : `in ${n} day${n===1?"":"s"}`; };
-const pill = e => { const s = statusOf(e); return `<span class="pill p-${s}"><i></i>${STATUS_LABEL[s]}</span>`; };
+const pill = e => { if (e.left_at) return `<span class="pill p-left"><i></i>Left</span>`; const s = statusOf(e); return `<span class="pill p-${s}"><i></i>${STATUS_LABEL[s]}</span>`; };
+const csChip = e => e.card_status ? `<span class="cs-chip" title="Card status">${esc(e.card_status)}</span>` : "";
+const remarksCell = e => `${csChip(e)}${e.remarks ? `<span class="sub">${esc(e.remarks)}</span>` : ""}`;
+const findEmp = id => S.emps.find(x => x.id === id) || S.left.find(x => x.id === id);
+function cardStatusList(){
+  const c = {}; for (const e of S.emps) if (e.card_status) c[e.card_status] = (c[e.card_status] || 0) + 1;
+  return Object.entries(c).sort((x, y) => { const ix = CARD_STATUSES.indexOf(x[0]), iy = CARD_STATUSES.indexOf(y[0]); return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy) || y[1] - x[1]; });
+}
 const dateCell = e => e.expiry ? `${fmtDate(e.expiry)}<div class="sub">${relDays(e.expiry)}</div>` : `<div class="sub">${esc(e.expiry_note || "No date")}</div>`;
 const isAdmin = () => S.me?.role === "admin";
 function toast(msg){ const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 function phoneIntl(m){ let d = String(m||"").replace(/\D/g,""); if (!d) return ""; if (d.startsWith("00")) d = d.slice(2); if (d.startsWith("0")) d = d.slice(1); if (d.length === 9 && d.startsWith("5")) d = "966" + d; return d; }
 function waText(e){
-  const s = statusOf(e); if (s === "ok") return "";
+  const s = statusOf(e), cs = e.card_status || "";
   const first = String(e.name || "").trim().split(/\s+/)[0] || "";
   const hi = first ? `Hi ${first[0].toUpperCase()}${first.slice(1).toLowerCase()},` : "Hi,";
   const n = e.expiry ? daysLeft(e.expiry) : 0;
-  const msg = s === "exp" ? `${hi} your Baladiya card expired on ${fmtDate(e.expiry)}. Please renew it as soon as possible and share the new card with your area manager. Thank you.`
+  const when = s === "exp" ? ` Your card expired on ${fmtDate(e.expiry)}.` : s === "due" ? ` Your card expires on ${fmtDate(e.expiry)}.` : "";
+  const BY_CARD = {
+    "Training pending": `${hi} please complete your Baladiya health training as soon as possible.${when} Let your area manager know once it's done. Thank you.`,
+    "Training done but card status not updated": `${hi} your Baladiya training is done, but your card isn't updated in the Baladiya system yet.${when} Please check it and send your area manager a photo of the updated card. Thank you.`,
+    "Rescheduled for exam": `${hi} this is a reminder about your rescheduled Baladiya exam.${when} Please make sure you attend, and tell your area manager the result. Thank you.`,
+    "Need to pay SAR 60": `${hi} please pay the SAR 60 Baladiya fee so your health card can be issued.${when} Send your area manager the receipt once it's paid. Thank you.`,
+  };
+  const msg = BY_CARD[cs] || (s === "exp" ? `${hi} your Baladiya card expired on ${fmtDate(e.expiry)}. Please renew it as soon as possible and share the new card with your area manager. Thank you.`
     : s === "due" ? `${hi} your Baladiya card expires on ${fmtDate(e.expiry)} (${n === 0 ? "today" : `in ${n} day${n === 1 ? "" : "s"}`}). Please book your renewal now. Thank you.`
-    : `${hi} we don't have your Baladiya card expiry date. Please send a photo of your Baladiya card to your area manager. Thank you.`;
-  return "?text=" + encodeURIComponent(msg);
+    : s === "miss" ? `${hi} we don't have your Baladiya card expiry date. Please send a photo of your Baladiya card to your area manager. Thank you.` : "");
+  return msg ? "?text=" + encodeURIComponent(msg) : "";
 }
 function contact(e){
   const p = phoneIntl(e.mobile); if (!p) return "";
-  return `<span class="contact"><a href="tel:+${p}" title="Call" aria-label="Call">${ICON.phone}</a><a href="https://wa.me/${p}${waText(e)}" target="_blank" rel="noopener" title="${statusOf(e) === "ok" ? "WhatsApp" : "WhatsApp — reminder ready to send"}" aria-label="WhatsApp">${ICON.wa}</a></span>`;
+  return `<span class="contact"><a href="tel:+${p}" title="Call" aria-label="Call">${ICON.phone}</a><a href="https://wa.me/${p}${waText(e)}" target="_blank" rel="noopener" title="${waText(e) ? "WhatsApp — reminder ready to send" : "WhatsApp"}" aria-label="WhatsApp">${ICON.wa}</a></span>`;
 }
 const ICON = {
   dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
@@ -122,8 +136,9 @@ async function pageAll(table, order){
   return rows;
 }
 async function loadAll(){
-  const emps = await pageAll("trackit_staff", "expiry");
-  S.emps = emps.sort((a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : 1);
+  const all = (await pageAll("trackit_staff", "expiry")).sort((a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : 1);
+  S.emps = all.filter(e => !e.left_at);                 // active staff: every count, list, alert and email uses these
+  S.left = all.filter(e => e.left_at).sort((a, b) => a.left_at < b.left_at ? 1 : -1);
   if (isAdmin()) {
     const [{ data }, { data: st }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
       sb.from("trackit_settings").select("email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result").eq("id", 1).maybeSingle()]);
@@ -177,12 +192,14 @@ function groupTable(titleTxt, colName, rows, filterKey){
   ${rows.map(([k,v]) => `<tr style="cursor:pointer" onclick="openGroup('${filterKey}',this.dataset.k)" data-k="${esc(k === "—" ? "" : k)}"><td><b>${esc(k)}</b></td><td class="mono">${v.total}</td><td class="mono" style="color:${v.exp?"var(--red)":"var(--muted)"};font-weight:${v.exp?700:400}">${v.exp}</td><td class="mono" style="color:${v.due?"var(--amber)":"var(--muted)"};font-weight:${v.due?700:400}">${v.due}</td><td class="mono hm">${v.miss}</td></tr>`).join("")}
   </tbody></table></div></div>`;
 }
-function openGroup(key, val){ S.filters = { q:"", store:"", status:"" }; S.filters[key] = val; go("employees"); }
+function openGroup(key, val){ S.filters = { q:"", store:"", status:"", cs:"" }; S.filters[key] = val; go("employees"); }
 function dashboard(){
   const c = counts(S.emps);
   const kpi = (st, lbl, v, sub, col) => `<div class="card kpi" onclick="quick('${st}')"><div class="l"><span class="dot" style="background:${col}"></span>${lbl}</div><div class="v mono" style="color:${col}">${v.toLocaleString()}</div><div class="s">${sub}</div></div>`;
   const next = S.emps.filter(e => ["exp","due"].includes(statusOf(e))).slice(0, 8);
-  return header("Dashboard", `${c.total.toLocaleString()} employees · ${stores().length} stores`) + `
+  const csl = cardStatusList();
+  return header("Dashboard", `${c.total.toLocaleString()} employees · ${stores().length} stores${S.left.length ? ` · ${S.left.length} marked as left` : ""}`,
+    S.emps.length ? `<button class="btn ghost" onclick="printReport()">PDF report</button>` : "") + `
   <div class="kpis k5">
     ${kpi("", "Total", c.total, "All employees", "var(--ink)")}
     ${kpi("exp", "Expired", c.exp, "Renew now", "var(--red)")}
@@ -190,20 +207,25 @@ function dashboard(){
     ${kpi("miss", "Date missing", c.miss, "Check Baladiya system", "#6E655B")}
     ${kpi("ok", "OK", c.ok, "More than 30 days", "var(--teal-d)")}
   </div>
+  ${csl.length ? `<div class="card section"><div class="pad" style="padding-bottom:4px"><h3>Card status</h3><p class="note" style="margin:4px 0 0">Where people are in the renewal process. Tap one to see who.</p></div>
+    <div class="cs-grid">${csl.map(([k, n]) => `<button class="cs-tile" onclick="openCs(this.dataset.k)" data-k="${esc(k)}"><b class="mono">${n}</b><span>${esc(k)}</span></button>`).join("")}</div></div>` : ""}
   ${groupTable("By store", "Store", groupRows(e => e.store), "store")}
   <div class="card section"><div class="pad" style="padding-bottom:6px"><h3>Needs action soonest</h3></div>
-    ${next.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">AM remarks</th></tr></thead><tbody>
-    ${next.map(e => `<tr onclick="editEmp('${e.id}')" style="cursor:pointer"><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="mono">${dateCell(e)}</td><td class="hm"><span class="sub">${esc(e.remarks)}</span></td></tr>`).join("")}
+    ${next.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">Card status / remarks</th></tr></thead><tbody>
+    ${next.map(e => `<tr onclick="editEmp('${e.id}')" style="cursor:pointer"><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${remarksCell(e)}</td></tr>`).join("")}
     </tbody></table></div><div class="pager"><span>The 8 most overdue</span><button class="btn sm ghost" onclick="go('alerts')">See all alerts</button></div>` : `<div class="empty">${S.emps.length ? "Nothing expired or due in the next 30 days." : "No employees yet. Go to <a href='#import'>Import</a> to upload the weekly file."}</div>`}
   </div>`;
 }
-function quick(st){ S.filters = { q:"", store:"", status:st }; go("employees"); }
+function openCs(k){ S.filters = { q:"", store:"", status:"", cs:k }; go("employees"); }
+function quick(st){ S.filters = { q:"", store:"", status:st, cs:"" }; go("employees"); }
 
 // ---------- employees ----------
 function filtered(){
-  const { q, store, status } = S.filters; const ql = q.trim().toLowerCase();
-  return S.emps.filter(e => (!ql || e.name.toLowerCase().includes(ql) || e.employee_id.toLowerCase().includes(ql) || String(e.iqama).includes(ql) || String(e.mobile).includes(ql)) &&
-    (!store || e.store === store) && (!status || statusOf(e) === status));
+  const { q, store, status, cs } = S.filters; const ql = q.trim().toLowerCase();
+  const base = status === "left" ? S.left : S.emps;
+  return base.filter(e => (!ql || e.name.toLowerCase().includes(ql) || e.employee_id.toLowerCase().includes(ql) || String(e.iqama).includes(ql) || String(e.mobile).includes(ql)) &&
+    (!store || e.store === store) && (!status || status === "left" || statusOf(e) === status) &&
+    (!cs || (cs === "__none" ? !e.card_status : e.card_status === cs)));
 }
 function filterBar(){
   const f = S.filters;
@@ -212,33 +234,38 @@ function filterBar(){
   return `<div class="filters">
     <input id="fq" type="search" placeholder="Search name, ID, Iqama or mobile…" value="${esc(f.q)}" oninput="S.filters.q=this.value;S.page=1;render()">
     ${sel("store", "All stores", sts.map(s => [s, s]))}
-    ${sel("status", "All statuses", Object.entries(STATUS_LABEL))}
+    ${sel("status", "All statuses", [...Object.entries(STATUS_LABEL), ...(S.left.length ? [["left", `Left the company (${S.left.length})`]] : [])])}
+    ${sel("cs", "All card statuses", [...new Set([...CARD_STATUSES, ...cardStatusList().map(x => x[0])])].map(s => [s, s]).concat([["__none", "No card status"]]))}
   </div>`;
 }
 function employees(){
   const list = filtered(); const per = 50; const pages = Math.max(1, Math.ceil(list.length / per));
   S.page = Math.min(S.page, pages); const slice = list.slice((S.page-1)*per, S.page*per);
   return header("Employees", "Search, filter and update expiry dates", `<button class="btn ghost" onclick="exportCSV()">Export list</button><button class="btn" onclick="editEmp()">+ Add employee</button>`) + filterBar() + `
-  <div class="card">${slice.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th class="hm">Nationality</th><th>Baladiya expiry</th><th class="hm">Status</th><th class="hm">AM remarks</th><th></th></tr></thead><tbody>
-    ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="hm">${esc(e.nationality)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${pill(e)}</td><td class="hm" style="max-width:240px"><span class="sub">${esc(e.remarks)}</span></td>
+  <div class="card">${slice.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th class="hm">Nationality</th><th>Baladiya expiry</th><th class="hm">Status</th><th class="hm">Card status / remarks</th><th></th></tr></thead><tbody>
+    ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div>${e.left_at || e.card_status ? `<div class="sm-only-b">${e.left_at ? pill(e) + " " : ""}${csChip(e)}</div>` : ""}</td><td class="hm">${esc(e.store)}</td><td class="hm">${esc(e.nationality)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${pill(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td>
     <td style="white-space:nowrap;text-align:right">${contact(e)}<button class="icon-btn" title="Edit" aria-label="Edit" onclick="editEmp('${e.id}')" style="display:inline-block">${ICON.edit}</button>${isAdmin() ? `<button class="icon-btn hm" title="Delete" aria-label="Delete" onclick="delEmp('${e.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
   </tbody></table></div>
   <div class="pager"><span>${list.length.toLocaleString()} employee${list.length===1?"":"s"} · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>`
   : `<div class="empty">${S.emps.length ? "No employees match these filters." : "No employees yet. Use <a href='#import'>Import</a> to upload this week's file."}</div>`}</div>`;
 }
 function editEmp(id){
-  const e = id ? S.emps.find(x => x.id === id) : { employee_id:"", name:"", store:"", iqama:"", nationality:"", mobile:"", expiry:"", expiry_note:"", remarks:"", card_status:"" };
+  const e = id ? findEmp(id) : { employee_id:"", name:"", store:"", iqama:"", nationality:"", mobile:"", expiry:"", expiry_note:"", remarks:"", card_status:"", card_photo:"" };
+  if (!e) return toast("This employee is no longer in Trackit.");
   const opts = (list, cur) => [...new Set([...list, cur].filter(Boolean))].map(n => `<option ${n===cur?"selected":""}>${esc(n)}</option>`).join("");
-  modal(`<h3>${id ? esc(e.name) : "Add employee"}</h3>${id ? `<p class="note" style="margin-top:-8px">${pill(e)} ${contact(e)}</p>` : ""}
+  const cs = e.card_status || "", known = !cs || CARD_STATUSES.includes(cs);
+  modal(`<h3>${id ? esc(e.name) : "Add employee"}</h3>${id ? `<p class="note" style="margin-top:-8px">${pill(e)} ${e.left_at ? "" : contact(e)}</p>` : ""}
+    ${e.left_at ? `<div class="warnbox">Marked as left on ${fmtTS(e.left_at)}. Not counted anywhere until you bring them back.</div>` : ""}
     <form id="ef">
       <div class="row2"><div><label>Expiry date</label><input type="date" name="expiry" value="${esc(e.expiry || "")}"></div>
       <div><label>AM remarks</label><input type="text" name="remarks" value="${esc(e.remarks)}" placeholder="e.g. medical booked for Sunday"></div></div>
-      ${(() => { const cs = e.card_status || "", known = !cs || CARD_STATUSES.includes(cs); return `<div class="row2"><div><label>Card status</label>
+      <div class="row2"><div><label>Card status</label>
         <select name="card_status_sel" id="csSel" onchange="$('#csCustomWrap').classList.toggle('hidden', this.value !== '__custom'); if (this.value === '__custom') $('#csCustom').focus()">
           <option value="">—</option>${CARD_STATUSES.map(s => `<option value="${esc(s)}" ${s === cs ? "selected" : ""}>${esc(s)}</option>`).join("")}
           <option value="__custom" ${known ? "" : "selected"}>Custom…</option></select></div>
-        <div id="csCustomWrap" class="${known ? "hidden" : ""}"><label>Custom status</label><input type="text" id="csCustom" name="card_status_custom" maxlength="120" value="${known ? "" : esc(cs)}" placeholder="Type the card status"></div></div>`; })()}
+        <div id="csCustomWrap" class="${known ? "hidden" : ""}"><label>Custom status</label><input type="text" id="csCustom" name="card_status_custom" maxlength="120" value="${known ? "" : esc(cs)}" placeholder="Type the card status"></div></div>
       ${!e.expiry && e.expiry_note ? `<p class="note">File said: <b>${esc(e.expiry_note)}</b>. Enter the real date when you have it.</p>` : ""}
+      ${id ? `<label>Card photo</label><div id="photoArea">${photoArea(e)}</div>` : ""}
       <div class="row2"><div><label>Employee ID</label><input type="text" name="employee_id" required value="${esc(e.employee_id)}"></div>
       <div><label>Name</label><input type="text" name="name" required value="${esc(e.name)}"></div></div>
       <div class="row2"><div><label>Store</label><input type="text" name="store" list="storeList" required value="${esc(e.store)}"><datalist id="storeList">${stores().map(s => `<option value="${esc(s)}">`).join("")}</datalist></div>
@@ -246,7 +273,12 @@ function editEmp(id){
       <div class="row2"><div><label>Iqama number</label><input type="text" name="iqama" inputmode="numeric" value="${esc(e.iqama)}"></div>
       <div><label>Mobile number</label><input type="text" name="mobile" inputmode="tel" value="${esc(e.mobile)}" placeholder="5XXXXXXXX"></div></div>
       <div class="err" id="eerr"></div>
-      <div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn">${id ? "Save" : "Add employee"}</button></div>
+      <div class="actions split">
+        ${id ? `<button type="button" class="btn ghost ${e.left_at ? "" : "danger-t"}" id="leftBtn" onclick="setLeft('${e.id}', ${e.left_at ? "false" : "true"}, this)">${e.left_at ? "Bring back" : "Mark as left"}</button>` : "<span></span>"}
+        <span style="display:flex;gap:10px"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn">${id ? "Save" : "Add employee"}</button></span>
+      </div>
+      ${id ? `<div class="hist-foot"><span class="sub">${e.updated_by_name ? `Last updated by <b>${esc(e.updated_by_name)}</b>` : "Last updated"}${e.updated_at ? ` · ${fmtTS(e.updated_at)}` : ""}</span>
+        <button type="button" class="linkbtn" onclick="loadHistory('${e.id}', this)">Show history</button></div><div id="histArea"></div>` : ""}
     </form>`, true);
   $("#ef").onsubmit = async ev => {
     ev.preventDefault(); const fd = Object.fromEntries(new FormData(ev.target));
@@ -260,14 +292,90 @@ function editEmp(id){
     closeModal(); toast(id ? "Saved" : "Employee added"); await loadAll(); render();
   };
 }
+const fmtTS = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" }); };
+
+// ---------- left the company ----------
+async function setLeft(id, left, btn){
+  if (left && btn && !btn.dataset.sure) { btn.dataset.sure = "1"; btn.textContent = "Tap again to confirm"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.sure; btn.textContent = "Mark as left"; } }, 4000); return; }
+  if (btn) btn.disabled = true;
+  const { error } = await sb.from("trackit_staff").update({ left_at: left ? new Date().toISOString() : null }).eq("id", id);
+  if (error) { if (btn) btn.disabled = false; return toast(error.message); }
+  closeModal(); toast(left ? "Marked as left — not counted any more" : "Brought back"); await loadAll(); render();
+}
+
+// ---------- card photo ----------
+function photoArea(e){
+  const pick = (txt) => `<label class="btn sm ghost photo-pick">${txt}<input type="file" accept="image/*" class="hidden" onchange="uploadPhoto('${e.id}', this)"></label>`;
+  return e.card_photo
+    ? `<div class="photo-row"><button type="button" class="btn sm ghost" onclick="viewPhoto('${e.id}', this)">View photo</button>${pick("Replace")}<button type="button" class="btn sm ghost danger-t" onclick="removePhoto('${e.id}', this)">Remove</button></div><div id="photoView"></div>`
+    : `<div class="photo-row">${pick("Add a photo of the card")}<span class="sub">Proof of renewal. Taken on the phone or chosen from files.</span></div>`;
+}
+function shrinkImage(file){
+  return new Promise((ok, bad) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const max = 1600, k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      c.toBlob(b => b ? ok(b) : bad(new Error("Couldn't read that picture.")), "image/jpeg", 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); bad(new Error("That file isn't a picture Trackit can read. Use a JPG or PNG photo.")); };
+    img.src = url;
+  });
+}
+async function uploadPhoto(id, input){
+  const e = findEmp(id), file = input.files && input.files[0]; if (!e || !file) return;
+  const area = $("#photoArea"); area.innerHTML = `<p class="note">Uploading photo…</p>`;
+  try {
+    const blob = await shrinkImage(file);
+    const path = `${String(e.employee_id).replace(/[^\w-]/g, "_")}/${Date.now()}.jpg`;
+    const up = await sb.storage.from("trackit-cards").upload(path, blob, { contentType: "image/jpeg", upsert: false });
+    if (up.error) throw up.error;
+    const old = e.card_photo;
+    const { error } = await sb.from("trackit_staff").update({ card_photo: path }).eq("id", id);
+    if (error) { await sb.storage.from("trackit-cards").remove([path]); throw error; }
+    if (old) sb.storage.from("trackit-cards").remove([old]);
+    e.card_photo = path; area.innerHTML = photoArea(e); toast("Card photo saved");
+  } catch (err) { area.innerHTML = photoArea(e) + `<div class="err">${esc(err.message || err)}</div>`; }
+}
+async function viewPhoto(id, btn){
+  const e = findEmp(id), box = $("#photoView"); if (!e || !box) return;
+  if (box.innerHTML) { box.innerHTML = ""; btn.textContent = "View photo"; return; }
+  btn.disabled = true;
+  const { data, error } = await sb.storage.from("trackit-cards").createSignedUrl(e.card_photo, 600);
+  btn.disabled = false;
+  if (error) return toast(error.message);
+  box.innerHTML = `<a href="${esc(data.signedUrl)}" target="_blank" rel="noopener"><img class="card-photo" src="${esc(data.signedUrl)}" alt="Baladiya card photo"></a>`;
+  btn.textContent = "Hide photo";
+}
+async function removePhoto(id, btn){
+  if (!btn.dataset.sure) { btn.dataset.sure = "1"; btn.textContent = "Tap again to remove"; return; }
+  const e = findEmp(id); btn.disabled = true;
+  const { error } = await sb.from("trackit_staff").update({ card_photo: "" }).eq("id", id);
+  if (error) { btn.disabled = false; return toast(error.message); }
+  sb.storage.from("trackit-cards").remove([e.card_photo]);
+  e.card_photo = ""; $("#photoArea").innerHTML = photoArea(e); toast("Photo removed");
+}
+
+// ---------- change history ----------
+async function loadHistory(id, btn){
+  const box = $("#histArea"); if (!box) return;
+  if (box.innerHTML) { box.innerHTML = ""; btn.textContent = "Show history"; return; }
+  box.innerHTML = `<p class="note">Loading…</p>`; btn.textContent = "Hide history";
+  const { data, error } = await sb.from("trackit_staff_history").select("changed_at,changed_by_name,field,old_value,new_value").eq("staff_id", id).order("changed_at", { ascending: false }).limit(40);
+  if (error) { box.innerHTML = `<div class="err">${esc(error.message)}</div>`; return; }
+  const val = v => v == null || v === "" ? "—" : /^\d{4}-\d{2}-\d{2}$/.test(v) ? fmtDate(v) : v;
+  box.innerHTML = data.length ? `<div class="hist">${data.map(h => `<div class="hist-row"><div><b>${esc(h.field)}</b>${h.old_value != null || h.new_value != null ? `: ${h.old_value != null ? `<span class="old">${esc(val(h.old_value))}</span> → ` : ""}${esc(val(h.new_value))}` : ""}</div>
+    <div class="sub">${esc(h.changed_by_name || "Trackit")} · ${fmtTS(h.changed_at)}</div></div>`).join("")}</div>` : `<p class="note">No changes recorded yet. Changes are recorded from now on.</p>`;
+}
 function delEmp(id){
-  const e = S.emps.find(x => x.id === id);
-  modal(`<h3>Delete ${esc(e.name)}?</h3><p class="note">This removes employee ${esc(e.employee_id)} from Trackit (e.g. they left the company). It can't be undone.</p>
+  const e = findEmp(id);
+  modal(`<h3>Delete ${esc(e.name)}?</h3><p class="note">This removes employee ${esc(e.employee_id)} and their history from Trackit. It can't be undone. If they left the company, use <b>Mark as left</b> instead — it keeps their record.</p>
   <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="dbtn">Delete</button></div>`);
   $("#dbtn").onclick = async () => { const { error } = await sb.from("trackit_staff").delete().eq("id", id); if (error) return toast(error.message); closeModal(); toast("Deleted"); await loadAll(); render(); };
 }
 const empRow = e => [e.employee_id, e.name, e.store, e.iqama, e.nationality, e.expiry || "", e.mobile, e.remarks];
-function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Status"], ...filtered().map(e => [...empRow(e), STATUS_LABEL[statusOf(e)]])]); }
+function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Status", "Card status"], ...filtered().map(e => [...empRow(e), e.left_at ? "Left" : STATUS_LABEL[statusOf(e)], e.card_status || ""])]); }
 function downloadCSV(name, rows){
   const csv = "﻿" + rows.map(r => r.map(v => { v = String(v ?? ""); if (/^[=+\-@\t\r]/.test(v) && !/^-?\d/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(",")).join("\r\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -360,7 +468,7 @@ function importView(){
   <div class="steps">
     <div class="card pad"><div class="step-n">1</div><h3>Use the Trackit template</h3>
       <p class="note">One sheet, one row per employee, these columns: <b>${COLS.join(", ")}</b>.</p>
-      <p class="note">Rows are matched by <b>Employee ID</b> — new people are added and changes are updated. Nobody is removed.</p>
+      <p class="note">Rows are matched by <b>Employee ID</b> — new people are added and changes are updated. Nobody is removed automatically: after saving, Trackit shows anyone missing from the file so you can mark them as left.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn tan" href="trackit-template.xlsx" download>Download template</a>
       ${S.emps.length ? `<button class="btn ghost" onclick="downloadTemplate(true)">Download current list</button>` : ""}</div>
     </div>
@@ -372,16 +480,18 @@ function importView(){
   </div>
   ${isAdmin() ? `<div class="card pad section" style="border:1px solid #F0C9BF"><h3>Delete all data</h3>
     <p class="note">Removes every employee (${S.emps.length.toLocaleString()}) so you can start again with a fresh upload. Logins are kept. This can't be undone.</p>
-    <button class="btn danger" onclick="wipeAll()" ${S.emps.length ? "" : "disabled"}>Delete all uploaded data</button></div>` : ""}`;
+    <button class="btn danger" onclick="wipeAll()" ${S.emps.length + S.left.length ? "" : "disabled"}>Delete all uploaded data</button></div>` : ""}`;
 }
 function wipeAll(){
   modal(`<h3>Delete all uploaded data?</h3>
-    <p class="note">This permanently removes <b>${S.emps.length.toLocaleString()} employees</b> for everyone. Tip: use <b>Download current list</b> first if you want a copy.</p>
+    <p class="note">This permanently removes <b>${(S.emps.length + S.left.length).toLocaleString()} employees</b> (with their history and card photos) for everyone. Tip: use <b>Download current list</b> first if you want a copy.</p>
     <label>Type DELETE to confirm</label><input type="text" id="wipeTxt" autocomplete="off" oninput="$('#wipeBtn').disabled=this.value.trim()!=='DELETE'">
     <div class="err" id="wipeErr"></div>
     <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="wipeBtn" disabled>Delete everything</button></div>`);
   $("#wipeBtn").onclick = async () => {
     $("#wipeBtn").disabled = true; $("#wipeErr").textContent = "";
+    const photos = [...S.emps, ...S.left].map(e => e.card_photo).filter(Boolean);
+    for (let i = 0; i < photos.length; i += 100) await sb.storage.from("trackit-cards").remove(photos.slice(i, i + 100));
     const a = await sb.from("trackit_staff").delete().not("id", "is", null);
     const b = a.error ? a : await sb.from("trackit_week_totals").delete().not("id", "is", null);
     if (a.error || b.error) { $("#wipeErr").textContent = (a.error || b.error).message; $("#wipeBtn").disabled = false; return; }
@@ -446,22 +556,50 @@ async function runImport(){
     const last = new Map(); I.rows.forEach(r => last.set(r.employee_id || r.where, r));
     const rows = [...last.values()].map(r => ({ row: r.where, employee_id: r.employee_id, name: r.name, store: r.store, iqama: r.iqama,
       nationality: r.nationality, mobile: r.mobile, expiry: r.expiry, expiry_note: r.expiry_note, remarks: r.remarks }));
-    const tot = { added:0, updated:0, skipped:0, errors:[] };
+    const tot = { added:0, updated:0, skipped:0, back:0, errors:[] };
+    const inFile = new Set(rows.map(r => String(r.employee_id || "").trim()).filter(Boolean));
     for (let i = 0; i < rows.length; i += 500) {
       $("#impProg").innerHTML = `<p class="note">Saving ${Math.min(i + 500, rows.length)} of ${rows.length}…</p>`;
       const { data, error } = await sb.rpc("trackit_import_v3", { rows: rows.slice(i, i + 500), week_label: null });
       if (error) throw error;
-      tot.added += data.added; tot.updated += data.updated; tot.skipped += data.skipped; tot.errors.push(...data.errors);
+      tot.added += data.added; tot.updated += data.updated; tot.skipped += data.skipped; tot.back += data.back || 0; tot.errors.push(...data.errors);
     }
-    I.result = tot; await loadAll(); render(); toast("Import finished");
+    await loadAll();
+    I.result = tot; I.missing = S.emps.filter(e => !inFile.has(String(e.employee_id).trim())).map(e => e.id);
+    render(); toast("Import finished");
   } catch (e) { $("#impProg").innerHTML = `<div class="errlist">${esc(e.message || e)}</div>`; $("#impBtn").disabled = false; }
 }
 function importResult(){
   const t = S.imp.result;
   return header("Import finished", esc(S.imp.file), `<button class="btn" onclick="S.imp=null;go('dashboard')">Go to dashboard</button>`) + `
   <div class="card pad"><div class="summary"><div><b style="color:var(--teal-d)">${t.added}</b>added</div><div><b style="color:var(--tan-d)">${t.updated}</b>updated</div><div><b>${t.skipped}</b>unchanged</div><div><b style="color:${t.errors.length?"var(--red)":"var(--muted)"}">${t.errors.length}</b>problems</div></div>
+  ${t.back ? `<p class="note">${t.back} ${t.back === 1 ? "person was" : "people were"} marked as left before and ${t.back === 1 ? "is" : "are"} in this file, so ${t.back === 1 ? "they're" : "they're"} active again.</p>` : ""}
   ${t.errors.length ? `<div class="errlist">${t.errors.slice(0,300).map(e => `<div>${esc(e.row)}: ${esc(e.msg)}</div>`).join("")}</div>` : `<div class="okbox">Everything saved. Dashboards update for everyone automatically.</div>`}
-  <div class="actions" style="justify-content:flex-start"><button class="btn ghost" onclick="S.imp=null;render()">Upload another file</button></div></div>`;
+  <div class="actions" style="justify-content:flex-start"><button class="btn ghost" onclick="S.imp=null;render()">Upload another file</button></div></div>
+  ${leaverCard()}`;
+}
+
+function leaverCard(){
+  const I = S.imp; if (I.leftDone) return `<div class="card pad section"><div class="okbox">${I.leftDone} marked as left. They're no longer counted. Find them any time under Employees → status "Left the company".</div></div>`;
+  const ppl = (I.missing || []).map(findEmp).filter(e => e && !e.left_at); if (!ppl.length) return "";
+  return `<div class="card pad section"><h3>Not in this file (${ppl.length})</h3>
+    <p class="note">These people are in Trackit but not in the file you just uploaded. <b>If the file is the full, current employee list</b>, they have probably left. Untick anyone who is still working.</p>
+    <div class="leaver-tools"><button class="linkbtn" onclick="document.querySelectorAll('.lv').forEach(c=>c.checked=true);countLeavers()">Select all</button> · <button class="linkbtn" onclick="document.querySelectorAll('.lv').forEach(c=>c.checked=false);countLeavers()">Select none</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th style="width:36px"></th><th>Employee</th><th class="hm">Store</th><th class="hm">Expiry</th></tr></thead><tbody>
+    ${ppl.map(e => `<tr><td><input type="checkbox" class="lv" value="${e.id}" checked onchange="countLeavers()" aria-label="Mark ${esc(e.name)} as left"></td><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="hm mono">${dateCell(e)}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="actions" style="justify-content:flex-start"><button class="btn" id="lvBtn" onclick="markLeavers()">Mark ${ppl.length} as left</button></div></div>`;
+}
+function countLeavers(){ const n = document.querySelectorAll(".lv:checked").length, b = $("#lvBtn"); if (b) { b.textContent = `Mark ${n} as left`; b.disabled = !n; } }
+async function markLeavers(){
+  const ids = [...document.querySelectorAll(".lv:checked")].map(c => c.value); if (!ids.length) return;
+  const b = $("#lvBtn"); b.disabled = true; b.textContent = "Saving…";
+  const now = new Date().toISOString();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error } = await sb.from("trackit_staff").update({ left_at: now }).in("id", ids.slice(i, i + 200));
+    if (error) { b.disabled = false; countLeavers(); return toast(error.message); }
+  }
+  S.imp.leftDone = ids.length; S.imp.missing = []; await loadAll(); render(); toast(`${ids.length} marked as left`);
 }
 
 // ---------- alerts ----------
@@ -470,12 +608,64 @@ function alerts(){
   const lists = { exp: by("exp"), due: by("due"), miss: by("miss") };
   const all = lists[S.alertTab], per = 50, pages = Math.max(1, Math.ceil(all.length / per));
   S.page = Math.min(S.page, pages); const list = all.slice((S.page - 1) * per, S.page * per);
-  return header("Alerts", "Who needs a Baladiya renewal") + `
+  return header("Alerts", "Who needs a Baladiya renewal", storesNeedingAction().length ? `<button class="btn ghost" onclick="messageStore()">Message a store</button>` : "") + `
   <div class="tabs">${[["exp","Expired"],["due","Due ≤ 30 days"],["miss","Date missing"]].map(([k,l]) => `<button class="${S.alertTab===k?"on":""}" onclick="S.alertTab='${k}';S.page=1;render()">${l} (${lists[k].length})</button>`).join("")}</div>
   ${S.alertTab === "miss" ? `<p class="note" style="margin-top:-4px">No usable expiry date. Check the Baladiya system and enter the date.</p>` : ""}
-  <div class="card">${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">AM remarks</th><th></th></tr></thead><tbody>
-  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px"><span class="sub">${esc(e.remarks)}</span></td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
+  <div class="card">${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">Card status / remarks</th><th></th></tr></thead><tbody>
+  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div>${e.card_status ? `<div class="sm-only-b">${csChip(e)}</div>` : ""}</td><td class="hm">${esc(e.store)}</td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
   </tbody></table></div>${pages > 1 ? `<div class="pager"><span>${all.length.toLocaleString()} people · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>` : ""}` : `<div class="empty">Nobody in this list.</div>`}</div>`;
+}
+
+// ---------- message a whole store ----------
+function storesNeedingAction(){
+  const c = {}; for (const e of S.emps) if (statusOf(e) !== "ok" || e.card_status) c[e.store || "—"] = (c[e.store || "—"] || 0) + 1;
+  return Object.entries(c).sort((x, y) => y[1] - x[1]);
+}
+S.sent = new Set();
+function messageStore(store){
+  const list = storesNeedingAction(); if (!list.length) return;
+  const st = store ?? (S.msgStore && list.some(x => x[0] === S.msgStore) ? S.msgStore : list[0][0]); S.msgStore = st;
+  const order = { exp:0, due:1, miss:2, ok:3 };
+  const ppl = S.emps.filter(e => (e.store || "—") === st && (statusOf(e) !== "ok" || e.card_status)).sort((x, y) => order[statusOf(x)] - order[statusOf(y)]);
+  const done = ppl.filter(e => S.sent.has(e.id)).length;
+  modal(`<h3>Message a store</h3>
+    <p class="note" style="margin-top:-6px">Everyone at the store who needs action. Tap WhatsApp for each person — the message is already written for their card status.</p>
+    <select id="msgStoreSel" onchange="messageStore(this.value)">${list.map(([s, n]) => `<option value="${esc(s)}" ${s === st ? "selected" : ""}>${esc(s)} (${n})</option>`).join("")}</select>
+    <p class="note" id="msgCount">${done} of ${ppl.length} messaged</p>
+    <div class="msg-list">${ppl.map(e => { const ph = phoneIntl(e.mobile); return `<div class="msg-row ${S.sent.has(e.id) ? "sent" : ""}" data-id="${e.id}">
+      <div class="msg-who"><b>${esc(e.name)}</b><div class="sub">${pill(e)} ${csChip(e)}</div></div>
+      ${ph ? `<a class="btn sm wa-btn" href="https://wa.me/${ph}${waText(e)}" target="_blank" rel="noopener" onclick="markSent('${e.id}')">${ICON.wa}<span>WhatsApp</span></a>` : `<span class="sub">No mobile number</span>`}
+    </div>`; }).join("")}</div>
+    <div class="actions"><button class="btn" onclick="closeModal()">Done</button></div>`, true);
+}
+function markSent(id){
+  S.sent.add(id); const row = document.querySelector(`.msg-row[data-id="${id}"]`); if (row) row.classList.add("sent");
+  const rows = document.querySelectorAll(".msg-row"), n = document.querySelectorAll(".msg-row.sent").length; const c = $("#msgCount"); if (c) c.textContent = `${n} of ${rows.length} messaged`;
+}
+
+// ---------- one-page PDF report ----------
+function printReport(){
+  const c = counts(S.emps), csl = cardStatusList(), top = groupRows(e => e.store).filter(([, v]) => v.exp + v.due + v.miss).slice(0, 8);
+  const soon = S.emps.filter(e => ["exp", "due"].includes(statusOf(e))).slice(0, 8);
+  const now = new Date(), stamp = now.toLocaleString("en-GB", { day:"2-digit", month:"long", year:"numeric", hour:"2-digit", minute:"2-digit" });
+  const box = (lbl, v, col) => `<div class="r-kpi"><div class="r-l">${lbl}</div><div class="r-v" style="color:${col}">${v}</div></div>`;
+  const pct = n => c.total ? Math.round(n / c.total * 100) + "%" : "0%";
+  document.getElementById("report")?.remove();
+  const r = document.createElement("div"); r.id = "report";
+  r.innerHTML = `<div class="r-head"><div class="r-brand"><img src="icon.svg" alt=""><div><b>Trackit</b><span>Half Million · Baladiya health cards</span></div></div><div class="r-date">${stamp}</div></div>
+    <h1>Baladiya card report</h1>
+    <p class="r-sub">${c.total} active employees across ${stores().length} stores${S.left.length ? ` · ${S.left.length} marked as left (not counted)` : ""}</p>
+    <div class="r-kpis">${box("Expired", `${c.exp} <small>${pct(c.exp)}</small>`, "#C2412D")}${box("Due ≤ 30 days", `${c.due} <small>${pct(c.due)}</small>`, "#A8691C")}${box("Date missing", `${c.miss} <small>${pct(c.miss)}</small>`, "#5E574C")}${box("OK", `${c.ok} <small>${pct(c.ok)}</small>`, "#2F8A72")}</div>
+    <div class="r-cols">
+      <div><h2>Stores needing action</h2>${top.length ? `<table><thead><tr><th>Store</th><th>Staff</th><th>Expired</th><th>Due</th><th>No date</th></tr></thead><tbody>${top.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v.total}</td><td class="r-red">${v.exp}</td><td>${v.due}</td><td>${v.miss}</td></tr>`).join("")}</tbody></table>` : `<p>No store needs action.</p>`}</div>
+      <div><h2>Card status</h2>${csl.length ? `<table><tbody>${csl.map(([k, n]) => `<tr><td>${esc(k)}</td><td class="r-num">${n}</td></tr>`).join("")}</tbody></table>` : `<p>No card statuses recorded yet.</p>`}</div>
+    </div>
+    <h2>Needs action soonest</h2>${soon.length ? `<table><thead><tr><th>Employee</th><th>Store</th><th>Expiry</th><th>Card status</th></tr></thead><tbody>${soon.map(e => `<tr><td>${esc(e.name)}</td><td>${esc(e.store)}</td><td class="r-nw">${fmtDate(e.expiry)} · ${relDays(e.expiry)}</td><td>${esc(e.card_status || "—")}</td></tr>`).join("")}</tbody></table>` : `<p>Nobody expired or due in the next 30 days.</p>`}
+    <div class="r-foot">Generated by Trackit · ${stamp}</div>`;
+  document.body.appendChild(r); document.body.classList.add("printing");
+  const done = () => { document.body.classList.remove("printing"); r.remove(); window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  setTimeout(() => window.print(), 150);
 }
 
 // ---------- assistant ----------
