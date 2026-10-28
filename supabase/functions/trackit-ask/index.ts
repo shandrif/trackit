@@ -64,6 +64,39 @@ async function askGemini(key: string, model: string, system: string, turns: { ro
   return answer ? { answer, status: 200 } : { status: 200, body: "empty answer (" + (j.candidates?.[0]?.finishReason || "no reason") + ")" };
 }
 
+// ---------- store → area manager / ROM / city / region (same matching as the app) ----------
+const SYN = [[/\bMEDINA\b|\bMADINA\b/g, "MADINAH"], [/\bJED\b/g, "JEDDAH"], [/\bRIY\b/g, "RIYADH"], [/\bJ ?WALK\b/g, "JWALK"], [/\bJ ?VIEW\b/g, "JVIEW"],
+  [/\bAZIZIYAH\b/g, "AZIZIYA"], [/\bMUSHAIT\b/g, ""], [/\bHIJRAH\b|\bHIGRAH\b/g, "HIJRA"], [/\bWALY\b/g, "WALI"], [/\bAHD\b/g, "AHAD"],
+  [/\bBOULEVARD\b/g, "BLVD"], [/\bJ ?VISION\b/g, "JEDDAH VISION"], [/\bSEVEN\b/g, "7"]];
+// spelling-tolerant word key: keep the first letter, drop vowels, a final H and doubled letters ("SOUDAH" = "SOUDA", "SHOWQIA" = "SHAWQIYAH")
+const wkey = (w: string) => /^\d+$/.test(w) ? w : (w[0] + w.slice(1).replace(/[AEIOUY]/g, "")).replace(/H$/, "").replace(/(.)\1+/g, "$1");
+const STOP = new Set(["AL", "HM", "BR", "BRANCH", "STORE", "THE", "S"]);
+function normStore(s: unknown): string[] {
+  let t = String(s || "").toUpperCase().replace(/&/g, " AND ").replace(/[^A-Z0-9]+/g, " ");
+  for (const [re, to] of SYN) t = t.replace(re as RegExp, to as string);
+  return t.split(" ").filter(w => w && !STOP.has(w)).map(wkey);
+}
+function matchStore(store: string, MAP: Record<string, any>, ALIAS: Record<string, string>): any {
+  const key = String(store || "").trim().toUpperCase(); if (!key) return null;
+  if (ALIAS[key] && MAP[ALIAS[key]]) return { ...MAP[ALIAS[key]], how: "linked" };
+  const code = (key.match(/\bB0*(\d{1,3})\b/) || [])[1];
+  if (code) { const hit = Object.values(MAP).find((m: any) => m.code.replace(/^B0*/, "B") === "B" + code); if (hit) return { ...hit, how: "auto" }; }
+  const st = normStore(key), sset = new Set(st); if (!st.length) return null;
+  const num = st.filter(w => /^\d+$/.test(w)).join(" ");
+  let best: any = null, bestScore = 0, tie = false;
+  for (const m of Object.values(MAP) as any[]) {
+    const bt = normStore(m.branch); if (num !== bt.filter(w => /^\d+$/.test(w)).join(" ")) continue;   // "AL AHSA" is not "AL AHSA 2"
+    const inter = bt.filter(w => sset.has(w)).length; if (!inter) continue;
+    // full overlap scores highest; a shorter store name inside a longer branch name ("ATYAF MALL" → "ATYAF MALL KHOBAR") is fine,
+    // but a store name with extra words is NOT matched to a shorter branch ("TAIF AL JAWAHRA" ≠ "AL TAIF")
+    const jac = inter / new Set([...st, ...bt]).size, storeInside = st.every(w => bt.includes(w));
+    const score = jac >= 0.6 ? jac + (storeInside ? 0.3 : 0) : storeInside && jac >= 0.5 ? jac + 0.3 : 0;
+    if (!score) continue;
+    if (score > bestScore + 1e-9) { best = m; bestScore = score; tie = false; } else if (Math.abs(score - bestScore) < 1e-9) tie = true;
+  }
+  return best && !tie && bestScore >= 0.6 ? { ...best, how: "auto" } : null;
+}
+
 const DAY = 86400000;
 function status(exp: string, today: number) {
   const d = Math.round((Date.parse(exp) - today) / DAY);
@@ -102,16 +135,23 @@ Deno.serve(async (req) => {
       rows.push(...(data || []));
       if (!data || data.length < 1000) break;
     }
+    const MAP: Record<string, any> = {}, ALIAS: Record<string, string> = {};
+    const [{ data: mp }, { data: al }] = await Promise.all([service.from("trackit_store_map").select("code,branch,area_manager,rom,city,region"), service.from("trackit_store_alias").select("store,code")]);
+    for (const m of mp || []) MAP[m.code] = m;
+    for (const x of al || []) ALIAS[x.store] = x.code;
+    const mcache = new Map<string, any>();
+    const mapOf = (s: string) => { if (!mcache.has(s)) mcache.set(s, Object.keys(MAP).length ? matchStore(s, MAP, ALIAS) : null); return mcache.get(s); };
     const now = new Date(); const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const todayStr = new Date(today).toISOString().slice(0, 10);
     type G = { total: number; expired: number; due: number; missing: number };
     const add = (m: Record<string, G>, k: string) => (m[k] ??= { total: 0, expired: 0, due: 0, missing: 0 });
     let expired = 0, due = 0, ok = 0, missing = 0;
-    const byStore: Record<string, G> = {};
+    const byStore: Record<string, G> = {}, byAM: Record<string, G> = {}, byROM: Record<string, G> = {}, byCity: Record<string, G> = {}, byRegion: Record<string, G> = {};
     const urgent: string[] = [];
     const cardCount: Record<string, number> = {};
     for (const r of rows) {
-      const gs = [add(byStore, r.store || "(no store)")];
+      const m = mapOf(r.store || "");
+      const gs = [add(byStore, r.store || "(no store)"), add(byAM, m?.area_manager || "(not mapped)"), add(byROM, m?.rom || "(not mapped)"), add(byCity, m?.city || "(not mapped)"), add(byRegion, m?.region || "(not mapped)")];
       let st: string;
       if (!r.expiry) { missing++; st = "missing"; } else { const d = Math.round((Date.parse(r.expiry) - today) / DAY); st = d < 0 ? "expired" : d <= 30 ? "due" : "ok"; }
       if (st === "expired") expired++; else if (st === "due") due++; else if (st === "ok") ok++;
@@ -122,12 +162,13 @@ Deno.serve(async (req) => {
       }
     }
     const fmt = (m: Record<string, G>, n: number) => Object.entries(m).sort((a, b) => (b[1].expired + b[1].due + b[1].missing) - (a[1].expired + a[1].due + a[1].missing)).slice(0, n)
-      .map(([k, v]) => `${k}: ${v.total} staff, ${v.expired} expired, ${v.due} due in 30 days, ${v.missing} no date`).join("\n");
+      .map(([k, v]) => { return `${k}: ${v.total} staff, ${v.expired} expired, ${v.due} due in 30 days, ${v.missing} no date`; }).join("\n");
+    const storeInfo = Object.keys(byStore).map((s) => { const m = mapOf(s === "(no store)" ? "" : s); return m ? `${s} → area manager ${m.area_manager}, ROM ${m.rom}, ${m.city}, ${m.region}` : `${s} → not mapped`; }).join("\n");
     const context = `Today is ${todayStr}. Baladiya health card records: ${rows.length}. Expired: ${expired}. Due within 30 days: ${due}. Date missing: ${missing}. OK: ${ok}.
 
 Card status counts (where people are in the renewal process): ${Object.entries(cardCount).map(([k, n]) => `${k}: ${n}`).join("; ") || "none recorded"}.
 
-By store:\n${fmt(byStore, 150)}\n\nEveryone expired, due within 30 days, with no date, or with a card status (most overdue first):\n${urgent.join("\n") || "none"}`;
+By region:\n${fmt(byRegion, 30)}\n\nBy city:\n${fmt(byCity, 60)}\n\nBy ROM (regional manager):\n${fmt(byROM, 30)}\n\nBy area manager:\n${fmt(byAM, 60)}\n\nBy store:\n${fmt(byStore, 150)}\n\nWhich area manager, ROM, city and region each store belongs to:\n${storeInfo || "none"}\n\nEveryone expired, due within 30 days, with no date, or with a card status (most overdue first):\n${urgent.join("\n") || "none"}`;
 
     const messages = [
       { role: "system", content: "You are Trackit's assistant for Half Million Coffee. You help the team keep staff Baladiya (municipality) health cards renewed. Answer ONLY from the data provided. Be brief and practical. Use plain sentences or short '-' lists. Do not use markdown bold, tables or headings. Status rules: expiry date before today = expired; within 30 days = due soon; no date = date missing (needs checking in the Baladiya system); otherwise OK. If the data does not answer the question, say so. Reply in the same language the user writes in (English or Arabic or Hindi)." },

@@ -156,3 +156,24 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--tan-d);font-weight:700;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer}
 .pw-eye:focus-visible{outline:2px solid var(--tan-d)}
 .unsaved{color:var(--amber);font-weight:600;margin:10px 0 0}
+
+/* ---------- area manager / ROM mapping ---------- */
+.grp-seg{display:inline-flex;flex-wrap:wrap;gap:4px;margin:18px 0 10px;padding:4px;border-radius:12px;background:rgba(255,255,255,.55);border:1px solid var(--line)}
+.grp-seg button{border:0;background:transparent;padding:7px 12px;border-radius:9px;font-weight:700;font-size:13px;color:var(--muted);cursor:pointer}
+.grp-seg button.on{background:var(--ink);color:var(--bg)}
+.map-sec{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:#FBF7F1}
+.map-sec > summary{cursor:pointer;padding:12px 14px;font-weight:700;list-style:none}
+.map-sec > summary::-webkit-details-marker{display:none}
+.map-sec > summary::before{content:"▸ ";color:var(--tan-d)}
+.map-sec[open] > summary::before{content:"▾ "}
+.map-sec .tbl-wrap{max-height:480px;overflow:auto;border-top:1px solid var(--line)}
+.map-sec select,.in-sm{min-width:0;width:100%;max-width:260px;padding:7px 9px;font-size:13px;border-radius:9px}
+tr.unmapped td:first-child b{color:var(--red)}
+@media (max-width:900px){ .grp-seg{display:flex} .grp-seg button{flex:1 1 auto} }
+.xf{display:contents}
+.more-f-btn{display:none}
+@media (max-width:900px){
+  .more-f-btn{display:inline-flex;justify-content:center;flex:1 1 100% !important;max-width:none !important}
+  .xf{display:none}
+  .xf.open{display:contents}
+}

@@ -327,6 +327,27 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--tan-d);font-weight:700;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer}
 .pw-eye:focus-visible{outline:2px solid var(--tan-d)}
 .unsaved{color:var(--amber);font-weight:600;margin:10px 0 0}
+
+/* ---------- area manager / ROM mapping ---------- */
+.grp-seg{display:inline-flex;flex-wrap:wrap;gap:4px;margin:18px 0 10px;padding:4px;border-radius:12px;background:rgba(255,255,255,.55);border:1px solid var(--line)}
+.grp-seg button{border:0;background:transparent;padding:7px 12px;border-radius:9px;font-weight:700;font-size:13px;color:var(--muted);cursor:pointer}
+.grp-seg button.on{background:var(--ink);color:var(--bg)}
+.map-sec{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:#FBF7F1}
+.map-sec > summary{cursor:pointer;padding:12px 14px;font-weight:700;list-style:none}
+.map-sec > summary::-webkit-details-marker{display:none}
+.map-sec > summary::before{content:"▸ ";color:var(--tan-d)}
+.map-sec[open] > summary::before{content:"▾ "}
+.map-sec .tbl-wrap{max-height:480px;overflow:auto;border-top:1px solid var(--line)}
+.map-sec select,.in-sm{min-width:0;width:100%;max-width:260px;padding:7px 9px;font-size:13px;border-radius:9px}
+tr.unmapped td:first-child b{color:var(--red)}
+@media (max-width:900px){ .grp-seg{display:flex} .grp-seg button{flex:1 1 auto} }
+.xf{display:contents}
+.more-f-btn{display:none}
+@media (max-width:900px){
+  .more-f-btn{display:inline-flex;justify-content:center;flex:1 1 100% !important;max-width:none !important}
+  .xf{display:none}
+  .xf.open{display:contents}
+}
 /* ================= Trackit motion & glass layer =================
    Motion rules (after Emil Kowalski's animation standards):
    - UI motion < 300ms, strong ease-out, never ease-in, no bounce on a work dashboard
@@ -560,7 +581,7 @@ const CARD_STATUSES = ["Training pending","Training done but card status not upd
 const COLS = ["Employee ID","Name","Store","Iqama Number","Nationality","Expiry Date","Mobile Number","AM Remarks"];
 
 // ---------- state ----------
-const S = { me:null, emps:[], left:[], weeks:[], profiles:[], view:"dashboard", page:1, filters:{q:"",store:"",status:"",cs:""}, alertTab:"exp", chat:[], channel:null, imp:null };
+const S = { me:null, emps:[], left:[], weeks:[], profiles:[], view:"dashboard", page:1, filters:{q:"",store:"",status:"",cs:"",am:"",rom:"",city:"",region:""}, sortBy:"expiry", groupBy:"store", map:{}, alias:{}, mapMeta:null, alertTab:"exp", chat:[], channel:null, imp:null };
 
 // ---------- helpers ----------
 const $ = s => document.querySelector(s);
@@ -575,6 +596,43 @@ const relDays = d => { const n = daysLeft(d); return n < 0 ? `${-n} day${n===-1?
 const pill = e => { if (e.left_at) return `<span class="pill p-left"><i></i>Left</span>`; const s = statusOf(e); return `<span class="pill p-${s}"><i></i>${STATUS_LABEL[s]}</span>`; };
 const csChip = e => e.card_status ? `<span class="cs-chip" title="Card status">${esc(e.card_status)}</span>` : "";
 const remarksCell = e => `${csChip(e)}${e.remarks ? `<span class="sub">${esc(e.remarks)}</span>` : ""}`;
+// ---------- store → branch mapping (area manager, ROM, city, region) ----------
+const SYN = [[/\bMEDINA\b|\bMADINA\b/g, "MADINAH"], [/\bJED\b/g, "JEDDAH"], [/\bRIY\b/g, "RIYADH"], [/\bJ ?WALK\b/g, "JWALK"], [/\bJ ?VIEW\b/g, "JVIEW"],
+  [/\bAZIZIYAH\b/g, "AZIZIYA"], [/\bMUSHAIT\b/g, ""], [/\bHIJRAH\b|\bHIGRAH\b/g, "HIJRA"], [/\bWALY\b/g, "WALI"], [/\bAHD\b/g, "AHAD"],
+  [/\bBOULEVARD\b/g, "BLVD"], [/\bJ ?VISION\b/g, "JEDDAH VISION"], [/\bSEVEN\b/g, "7"]];
+// spelling-tolerant word key: keep the first letter, drop vowels, a final H and doubled letters ("SOUDAH" = "SOUDA", "SHOWQIA" = "SHAWQIYAH")
+const wkey = w => /^\d+$/.test(w) ? w : (w[0] + w.slice(1).replace(/[AEIOUY]/g, "")).replace(/H$/, "").replace(/(.)\1+/g, "$1");
+const STOP = new Set(["AL", "HM", "BR", "BRANCH", "STORE", "THE", "S"]);
+function normStore(s){
+  let t = String(s || "").toUpperCase().replace(/&/g, " AND ").replace(/[^A-Z0-9]+/g, " ");
+  for (const [re, to] of SYN) t = t.replace(re, to);
+  return t.split(" ").filter(w => w && !STOP.has(w)).map(wkey);
+}
+function matchStore(store){
+  const key = String(store || "").trim().toUpperCase(); if (!key) return null;
+  if (S.alias[key] && S.map[S.alias[key]]) return { ...S.map[S.alias[key]], how: "linked" };
+  const code = (key.match(/\bB0*(\d{1,3})\b/) || [])[1];
+  if (code) { const hit = Object.values(S.map).find(m => m.code.replace(/^B0*/, "B") === "B" + code); if (hit) return { ...hit, how: "auto" }; }
+  const st = normStore(key), sset = new Set(st); if (!st.length) return null;
+  const num = st.filter(w => /^\d+$/.test(w)).join(" ");
+  let best = null, bestScore = 0, tie = false;
+  for (const m of Object.values(S.map)) {
+    const bt = normStore(m.branch); if (num !== bt.filter(w => /^\d+$/.test(w)).join(" ")) continue;   // "AL AHSA" is not "AL AHSA 2"
+    const inter = bt.filter(w => sset.has(w)).length; if (!inter) continue;
+    // full overlap scores highest; a shorter store name inside a longer branch name ("ATYAF MALL" → "ATYAF MALL KHOBAR") is fine,
+    // but a store name with extra words is NOT matched to a shorter branch ("TAIF AL JAWAHRA" ≠ "AL TAIF")
+    const jac = inter / new Set([...st, ...bt]).size, storeInside = st.every(w => bt.includes(w));
+    const score = jac >= 0.6 ? jac + (storeInside ? 0.3 : 0) : storeInside && jac >= 0.5 ? jac + 0.3 : 0;
+    if (!score) continue;
+    if (score > bestScore + 1e-9) { best = m; bestScore = score; tie = false; } else if (Math.abs(score - bestScore) < 1e-9) tie = true;
+  }
+  return best && !tie && bestScore >= 0.6 ? { ...best, how: "auto" } : null;
+}
+let mapCache = new Map();
+const mapOf = e => { const k = e.store || ""; if (!mapCache.has(k)) mapCache.set(k, matchStore(k)); return mapCache.get(k); };
+const GROUPS = { store:["Store", e => e.store], am:["Area manager", e => mapOf(e)?.area_manager], rom:["ROM", e => mapOf(e)?.rom], city:["City", e => mapOf(e)?.city], region:["Region", e => mapOf(e)?.region] };
+const hasMap = () => Object.keys(S.map).length > 0;
+const storeSub = e => { const m = mapOf(e); return m ? `<div class="sub">${esc(m.area_manager)}${m.city ? " · " + esc(m.city) : ""}</div>` : ""; };
 const findEmp = id => S.emps.find(x => x.id === id) || S.left.find(x => x.id === id);
 function cardStatusList(){
   const c = {}; for (const e of S.emps) if (e.card_status) c[e.card_status] = (c[e.card_status] || 0) + 1;
@@ -721,6 +779,11 @@ async function loadAll(){
   const all = (await pageAll("trackit_staff", "expiry")).sort((a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : 1);
   S.emps = all.filter(e => !e.left_at);                 // active staff: every count, list, alert and email uses these
   S.left = all.filter(e => e.left_at).sort((a, b) => a.left_at < b.left_at ? 1 : -1);
+  const [mp, al, mm] = await Promise.all([sb.from("trackit_store_map").select("*").order("code"), sb.from("trackit_store_alias").select("store,code"), sb.from("trackit_map_meta").select("*").eq("id", 1).maybeSingle()]);
+  if (!mp.error && Array.isArray(mp.data)) { S.map = {}; for (const m of mp.data) S.map[m.code] = m; }
+  if (!al.error && Array.isArray(al.data)) { S.alias = {}; for (const x of al.data) S.alias[x.store] = x.code; }
+  if (!mm.error) S.mapMeta = mm.data || null;
+  mapCache = new Map();
   if (isAdmin()) {
     const [{ data }, { data: st }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
       sb.from("trackit_settings").select("email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result").eq("id", 1).maybeSingle()]);
@@ -763,6 +826,12 @@ const header = (t, p, extra="") => `<div class="top"><div><h2>${t}</h2><p>${p}</
 
 // ---------- dashboard ----------
 function counts(list){ const c = { exp:0, due:0, miss:0, ok:0, total:list.length }; for (const e of list) c[statusOf(e)]++; return c; }
+function groupSwitch(){
+  if (!hasMap()) return groupTable("By store", "Store", groupRows(e => e.store), "store");
+  const g = GROUPS[S.groupBy] || GROUPS.store;
+  return `<div class="grp-seg" role="tablist" aria-label="Group by">${Object.entries(GROUPS).map(([k, [l]]) => `<button role="tab" class="${S.groupBy === k ? "on" : ""}" aria-selected="${S.groupBy === k}" onclick="S.groupBy='${k}';render()">${l}</button>`).join("")}</div>` +
+    groupTable(`By ${g[0].toLowerCase()}`, g[0], groupRows(g[1]), S.groupBy);
+}
 function groupRows(keyFn){
   const g = {};
   for (const e of S.emps) { const k = keyFn(e) || "—"; g[k] ??= { total:0, exp:0, due:0, miss:0, ok:0 }; g[k].total++; g[k][statusOf(e)]++; }
@@ -774,7 +843,7 @@ function groupTable(titleTxt, colName, rows, filterKey){
   ${rows.map(([k,v]) => `<tr style="cursor:pointer" onclick="openGroup('${filterKey}',this.dataset.k)" data-k="${esc(k === "—" ? "" : k)}"><td><b>${esc(k)}</b></td><td class="mono">${v.total}</td><td class="mono" style="color:${v.exp?"var(--red)":"var(--muted)"};font-weight:${v.exp?700:400}">${v.exp}</td><td class="mono" style="color:${v.due?"var(--amber)":"var(--muted)"};font-weight:${v.due?700:400}">${v.due}</td><td class="mono hm">${v.miss}</td></tr>`).join("")}
   </tbody></table></div></div>`;
 }
-function openGroup(key, val){ S.filters = { q:"", store:"", status:"", cs:"" }; S.filters[key] = val; go("employees"); }
+function openGroup(key, val){ S.filters = { q:"", store:"", status:"", cs:"", am:"", rom:"", city:"", region:"" }; S.filters[key] = val === "" ? "__none" : val; go("employees"); }
 function dashboard(){
   const c = counts(S.emps);
   const kpi = (st, lbl, v, sub, col) => `<div class="card kpi" onclick="quick('${st}')"><div class="l"><span class="dot" style="background:${col}"></span>${lbl}</div><div class="v mono" style="color:${col}">${v.toLocaleString()}</div><div class="s">${sub}</div></div>`;
@@ -791,33 +860,47 @@ function dashboard(){
   </div>
   ${csl.length ? `<div class="card section"><div class="pad" style="padding-bottom:4px"><h3>Card status</h3><p class="note" style="margin:4px 0 0">Where people are in the renewal process. Tap one to see who.</p></div>
     <div class="cs-grid">${csl.map(([k, n]) => `<button class="cs-tile" onclick="openCs(this.dataset.k)" data-k="${esc(k)}"><b class="mono">${n}</b><span>${esc(k)}</span></button>`).join("")}</div></div>` : ""}
-  ${groupTable("By store", "Store", groupRows(e => e.store), "store")}
+  ${groupSwitch()}
   <div class="card section"><div class="pad" style="padding-bottom:6px"><h3>Needs action soonest</h3></div>
     ${next.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">Card status / remarks</th></tr></thead><tbody>
     ${next.map(e => `<tr onclick="editEmp('${e.id}')" style="cursor:pointer"><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${remarksCell(e)}</td></tr>`).join("")}
     </tbody></table></div><div class="pager"><span>The 8 most overdue</span><button class="btn sm ghost" onclick="go('alerts')">See all alerts</button></div>` : `<div class="empty">${S.emps.length ? "Nothing expired or due in the next 30 days." : "No employees yet. Go to <a href='#import'>Import</a> to upload the weekly file."}</div>`}
   </div>`;
 }
-function openCs(k){ S.filters = { q:"", store:"", status:"", cs:k }; go("employees"); }
-function quick(st){ S.filters = { q:"", store:"", status:st, cs:"" }; go("employees"); }
+function openCs(k){ S.filters = { q:"", store:"", status:"", cs:k, am:"", rom:"", city:"", region:"" }; go("employees"); }
+function quick(st){ S.filters = { q:"", store:"", status:st, cs:"", am:"", rom:"", city:"", region:"" }; go("employees"); }
 
 // ---------- employees ----------
 function filtered(){
-  const { q, store, status, cs } = S.filters; const ql = q.trim().toLowerCase();
+  const { q, store, status, cs, am, rom, city, region } = S.filters; const ql = q.trim().toLowerCase();
+  const mf = (v, want) => !want || (want === "__none" ? !v : v === want);
   const base = status === "left" ? S.left : S.emps;
   return base.filter(e => (!ql || e.name.toLowerCase().includes(ql) || e.employee_id.toLowerCase().includes(ql) || String(e.iqama).includes(ql) || String(e.mobile).includes(ql)) &&
     (!store || e.store === store) && (!status || status === "left" || statusOf(e) === status) &&
-    (!cs || (cs === "__none" ? !e.card_status : e.card_status === cs)));
+    (!cs || (cs === "__none" ? !e.card_status : e.card_status === cs)) &&
+    (!(am || rom || city || region) || (m => mf(m?.area_manager, am) && mf(m?.rom, rom) && mf(m?.city, city) && mf(m?.region, region))(mapOf(e)))).sort(sorter());
+}
+function sorter(){
+  const k = S.sortBy;
+  const ex = (a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : (a.expiry || "0000") > (b.expiry || "0000") ? 1 : 0;
+  if (k === "expiry" || !k) return ex;
+  const val = k === "name" ? (e => e.name) : (GROUPS[k] ? GROUPS[k][1] : (e => e.store));
+  return (a, b) => String(val(a) || "\uffff").localeCompare(String(val(b) || "\uffff")) || ex(a, b);
 }
 function filterBar(){
   const f = S.filters;
   const sts = [...new Set(S.emps.map(e => e.store).filter(Boolean))].sort();
-  const sel = (key, all, opts) => `<select onchange="S.filters.${key}=this.value;S.page=1;render()"><option value="">${all}</option>${opts.map(([v,l]) => `<option value="${esc(v)}" ${f[key]===v?"selected":""}>${esc(l)}</option>`).join("")}</select>`;
+  const sel = (key, all, opts) => `<select aria-label="${all}" onchange="S.filters.${key}=this.value;S.page=1;render()"><option value="">${all}</option>${opts.map(([v,l]) => `<option value="${esc(v)}" ${f[key]===v?"selected":""}>${esc(l)}</option>`).join("")}</select>`;
+  const vals = k => { const s = new Set(); let none = false; for (const e of S.emps) { const v = GROUPS[k][1](e); if (v) s.add(v); else none = true; } return [...[...s].sort().map(v => [v, v]), ...(none ? [["__none", "Not mapped"]] : [])]; };
   return `<div class="filters">
     <input id="fq" type="search" placeholder="Search name, ID, Iqama or mobile…" value="${esc(f.q)}" oninput="S.filters.q=this.value;S.page=1;render()">
     ${sel("store", "All stores", sts.map(s => [s, s]))}
     ${sel("status", "All statuses", [...Object.entries(STATUS_LABEL), ...(S.left.length ? [["left", `Left the company (${S.left.length})`]] : [])])}
     ${sel("cs", "All card statuses", [...new Set([...CARD_STATUSES, ...cardStatusList().map(x => x[0])])].map(s => [s, s]).concat([["__none", "No card status"]]))}
+    ${hasMap() ? `<button type="button" class="btn sm ghost more-f-btn" onclick="S.moreF=!S.moreF;render()">${S.moreF ? "Fewer filters" : `More filters${["region","city","am","rom"].some(k => f[k]) || S.sortBy !== "expiry" ? " •" : ""}`}</button>
+    <span class="xf ${S.moreF ? "open" : ""}">${sel("region", "All regions", vals("region"))}${sel("city", "All cities", vals("city"))}${sel("am", "All area managers", vals("am"))}${sel("rom", "All ROMs", vals("rom"))}
+    <select aria-label="Sort by" onchange="S.sortBy=this.value;S.page=1;render()">${[["expiry","Sort: expiry date"],["name","Sort: name"],["store","Sort: store"],["am","Sort: area manager"],["rom","Sort: ROM"],["city","Sort: city"],["region","Sort: region"]].map(([v,l]) => `<option value="${v}" ${S.sortBy===v?"selected":""}>${l}</option>`).join("")}</select></span>` : ""}
+    ${Object.entries(f).some(([k, v]) => v && k !== "q") ? `<button class="btn sm ghost" onclick="S.filters={q:S.filters.q,store:'',status:'',cs:'',am:'',rom:'',city:'',region:''};S.page=1;render()">Clear filters</button>` : ""}
   </div>`;
 }
 function employees(){
@@ -825,7 +908,7 @@ function employees(){
   S.page = Math.min(S.page, pages); const slice = list.slice((S.page-1)*per, S.page*per);
   return header("Employees", "Search, filter and update expiry dates", `<button class="btn ghost" onclick="exportCSV()">Export list</button><button class="btn" onclick="editEmp()">+ Add employee</button>`) + filterBar() + `
   <div class="card">${slice.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th class="hm">Nationality</th><th>Baladiya expiry</th><th class="hm">Status</th><th class="hm">Card status / remarks</th><th></th></tr></thead><tbody>
-    ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div>${e.left_at || e.card_status ? `<div class="sm-only-b">${e.left_at ? pill(e) + " " : ""}${csChip(e)}</div>` : ""}</td><td class="hm">${esc(e.store)}</td><td class="hm">${esc(e.nationality)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${pill(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td>
+    ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div>${e.left_at || e.card_status ? `<div class="sm-only-b">${e.left_at ? pill(e) + " " : ""}${csChip(e)}</div>` : ""}</td><td class="hm">${esc(e.store)}${storeSub(e)}</td><td class="hm">${esc(e.nationality)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${pill(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td>
     <td style="white-space:nowrap;text-align:right">${contact(e)}<button class="icon-btn" title="Edit" aria-label="Edit" onclick="editEmp('${e.id}')" style="display:inline-block">${ICON.edit}</button>${isAdmin() ? `<button class="icon-btn hm" title="Delete" aria-label="Delete" onclick="delEmp('${e.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
   </tbody></table></div>
   <div class="pager"><span>${list.length.toLocaleString()} employee${list.length===1?"":"s"} · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>`
@@ -970,7 +1053,7 @@ function delEmp(id){
   $("#dbtn").onclick = async () => { const { error } = await sb.from("trackit_staff").delete().eq("id", id); if (error) return toast(error.message); closeModal(); toast("Deleted"); await loadAll(); render(); };
 }
 const empRow = e => [e.employee_id, e.name, e.store, e.iqama, e.nationality, e.expiry || "", e.mobile, e.remarks];
-function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Status", "Card status"], ...filtered().map(e => [...empRow(e), e.left_at ? "Left" : STATUS_LABEL[statusOf(e)], e.card_status || ""])]); }
+function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Status", "Card status", "Area manager", "ROM", "City", "Region"], ...filtered().map(e => { const m = mapOf(e) || {}; return [...empRow(e), e.left_at ? "Left" : STATUS_LABEL[statusOf(e)], e.card_status || "", m.area_manager || "", m.rom || "", m.city || "", m.region || ""]; })]); }
 function downloadCSV(name, rows){
   const csv = "﻿" + rows.map(r => r.map(v => { v = String(v ?? ""); if (/^[=+\-@\t\r]/.test(v) && !/^-?\d/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(",")).join("\r\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -1199,15 +1282,18 @@ async function markLeavers(){
 
 // ---------- alerts ----------
 function alerts(){
-  const by = s => S.emps.filter(e => statusOf(e) === s);
+  const { am, rom, city, region } = S.filters; const mf = (v, w) => !w || (w === "__none" ? !v : v === w);
+  const inArea = e => !(am || rom || city || region) || (m => mf(m?.area_manager, am) && mf(m?.rom, rom) && mf(m?.city, city) && mf(m?.region, region))(mapOf(e));
+  const by = s => S.emps.filter(e => statusOf(e) === s && inArea(e));
   const lists = { exp: by("exp"), due: by("due"), miss: by("miss") };
   const all = lists[S.alertTab], per = 50, pages = Math.max(1, Math.ceil(all.length / per));
   S.page = Math.min(S.page, pages); const list = all.slice((S.page - 1) * per, S.page * per);
   return header("Alerts", "Who needs a Baladiya renewal", storesNeedingAction().length ? `<button class="btn ghost" onclick="messageStore()">Message a store</button>` : "") + `
   <div class="tabs">${[["exp","Expired"],["due","Due ≤ 30 days"],["miss","Date missing"]].map(([k,l]) => `<button class="${S.alertTab===k?"on":""}" onclick="S.alertTab='${k}';S.page=1;render()">${l} (${lists[k].length})</button>`).join("")}</div>
+  ${hasMap() ? `<div class="filters">${["region","city","am","rom"].map(k => { const lbl = { region:"All regions", city:"All cities", am:"All area managers", rom:"All ROMs" }[k]; const s = new Set(S.emps.map(e => GROUPS[k][1](e)).filter(Boolean)); return `<select aria-label="${lbl}" onchange="S.filters.${k}=this.value;S.page=1;render()"><option value="">${lbl}</option>${[...s].sort().map(v => `<option value="${esc(v)}" ${S.filters[k]===v?"selected":""}>${esc(v)}</option>`).join("")}</select>`; }).join("")}</div>` : ""}
   ${S.alertTab === "miss" ? `<p class="note" style="margin-top:-4px">No usable expiry date. Check the Baladiya system and enter the date.</p>` : ""}
   <div class="card">${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">Card status / remarks</th><th></th></tr></thead><tbody>
-  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div>${e.card_status ? `<div class="sm-only-b">${csChip(e)}</div>` : ""}</td><td class="hm">${esc(e.store)}</td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
+  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div>${e.card_status ? `<div class="sm-only-b">${csChip(e)}</div>` : ""}</td><td class="hm">${esc(e.store)}${storeSub(e)}</td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
   </tbody></table></div>${pages > 1 ? `<div class="pager"><span>${all.length.toLocaleString()} people · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>` : ""}` : `<div class="empty">Nobody in this list.</div>`}</div>`;
 }
 
@@ -1310,7 +1396,52 @@ function loginsView(){
   ${S.profiles.map(p => `<tr><td><b>${esc(p.full_name || p.email)}</b><div class="sub sm-only">${esc(p.email)}</div></td><td class="hm">${esc(p.email)}</td><td>${p.role === "admin" ? "Admin" : "User"}</td>
     <td style="text-align:right;white-space:nowrap"><button class="btn sm ghost" onclick="resetPw('${p.id}')">${ICON.key}<span class="hm">Reset password</span></button>${p.id !== S.me.id ? `<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delLogin('${p.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
   </tbody></table></div></div>
+  ${mappingCard()}
   ${emailCard()}`;
+}
+// ---------- admin: store mapping ----------
+function mappingCard(){
+  if (!hasMap()) return `<div class="card pad section"><h3>Store mapping</h3><p class="note">The branch list hasn't been synced yet. It comes from the weekly Span of Control sync.</p></div>`;
+  const stores = [...new Set([...S.emps, ...S.left].map(e => e.store).filter(Boolean))].sort();
+  const rows = stores.map(s => ({ s, m: matchStore(s), n: S.emps.filter(e => e.store === s).length }));
+  const missing = rows.filter(r => !r.m);
+  const branches = Object.values(S.map).sort((x, y) => x.branch.localeCompare(y.branch));
+  const opt = cur => `<option value="">— not linked —</option>${branches.map(b => `<option value="${esc(b.code)}" ${cur === b.code ? "selected" : ""}>${esc(b.branch)} (${esc(b.code)})</option>`).join("")}`;
+  const synced = S.mapMeta?.synced_at ? fmtTS(S.mapMeta.synced_at) : "not yet";
+  return `<div class="card pad section" id="mapCard"><h3>Store mapping</h3>
+    <p class="note">Area manager and ROM come from the Span of Control file every Sunday (last sync: <b>${synced}</b>, ${Object.keys(S.map).length} branches). City and region are kept here — correct them below and the sync won't overwrite them.</p>
+    ${stores.length ? (missing.length ? `<div class="warnbox">${missing.length} store name${missing.length === 1 ? "" : "s"} in Trackit didn't match a branch automatically. Pick the right branch so ${missing.length === 1 ? "it shows" : "they show"} under the right area manager.</div>` : `<div class="okbox">Every store in Trackit is linked to a branch.</div>`) : `<p class="note">No employees yet — links will show here after the first upload.</p>`}
+    ${stores.length ? `<details class="map-sec" ${missing.length ? "open" : ""}><summary>Store names in Trackit (${stores.length})</summary>
+      <div class="tbl-wrap"><table><thead><tr><th>Name in Trackit</th><th>Branch</th><th class="hm">Area manager</th><th class="hm">ROM</th></tr></thead><tbody>
+      ${rows.sort((x, y) => (!!x.m - !!y.m) || x.s.localeCompare(y.s)).map(r => `<tr class="${r.m ? "" : "unmapped"}"><td><b>${esc(r.s)}</b><div class="sub">${r.n} employee${r.n === 1 ? "" : "s"}${r.m ? ` · ${r.m.how === "linked" ? "linked by admin" : "matched automatically"}` : ""}</div></td>
+        <td><select aria-label="Branch for ${esc(r.s)}" data-store="${esc(r.s)}" onchange="linkStore(this)">${opt(r.m?.code)}</select></td><td class="hm">${esc(r.m?.area_manager || "—")}</td><td class="hm">${esc(r.m?.rom || "—")}</td></tr>`).join("")}
+      </tbody></table></div></details>` : ""}
+    <details class="map-sec"><summary>Branches — city and region (${branches.length})</summary>
+      <div class="tbl-wrap"><table><thead><tr><th>Branch</th><th class="hm">Area manager</th><th>City</th><th>Region</th></tr></thead><tbody>
+      ${branches.map(b => `<tr><td><b>${esc(b.branch)}</b><div class="sub mono">${esc(b.code)} · ${esc(b.rom)}</div></td><td class="hm">${esc(b.area_manager)}</td>
+        <td><input class="in-sm" aria-label="City for ${esc(b.branch)}" value="${esc(b.city)}" data-code="${esc(b.code)}" data-f="city" onchange="saveGeo(this)" list="cityList"></td>
+        <td><input class="in-sm" aria-label="Region for ${esc(b.branch)}" value="${esc(b.region)}" data-code="${esc(b.code)}" data-f="region" onchange="saveGeo(this)" list="regionList"></td></tr>`).join("")}
+      </tbody></table></div>
+      <datalist id="cityList">${[...new Set(branches.map(b => b.city).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join("")}</datalist>
+      <datalist id="regionList">${[...new Set(branches.map(b => b.region).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join("")}</datalist>
+    </details></div>`;
+}
+async function linkStore(sel){
+  const store = sel.dataset.store.trim().toUpperCase(), code = sel.value; sel.disabled = true;
+  const { error } = code ? await sb.from("trackit_store_alias").upsert({ store, code, set_by: S.me.full_name || S.me.email, set_at: new Date().toISOString() })
+                         : await sb.from("trackit_store_alias").delete().eq("store", store);
+  sel.disabled = false;
+  if (error) return toast(error.message);
+  if (code) S.alias[store] = code; else delete S.alias[store];
+  mapCache = new Map(); toast(code ? "Store linked" : "Link removed"); render();
+}
+async function saveGeo(inp){
+  const v = inp.value.replace(/\s+/g, " ").trim(), code = inp.dataset.code, f = inp.dataset.f;
+  inp.disabled = true;
+  const { error } = await sb.from("trackit_store_map").update({ [f]: v }).eq("code", code);
+  inp.disabled = false;
+  if (error) return toast(error.message);
+  S.map[code][f] = v; inp.value = v; mapCache = new Map(); toast(`${f === "city" ? "City" : "Region"} saved`);
 }
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const hourLabel = h => `${((h + 11) % 12) + 1}:00 ${h < 12 ? "AM" : "PM"}`;
