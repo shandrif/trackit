@@ -73,11 +73,22 @@ const VIEWS = () => [
 ];
 
 // ---------- auth ----------
+function loginError(err){
+  const m = String(err?.message || err || ""), s = err?.status;
+  if (/invalid login credentials/i.test(m)) return "Wrong email or password. Check for a typo, or ask your admin to reset your password.";
+  if (/email not confirmed/i.test(m)) return "This login isn't activated yet. Ask your admin to add you again from the Users page.";
+  if (s === 429 || /too many|rate limit/i.test(m)) return "Too many tries. Wait a minute, then try again.";
+  if (!navigator.onLine || /failed to fetch|network|load failed|timeout/i.test(m)) return "No internet connection. Check your signal and try again.";
+  return m || "Couldn't sign in. Please try again.";
+}
 $("#loginForm").addEventListener("submit", async e => {
-  e.preventDefault(); $("#lerr").textContent = ""; $("#lbtn").disabled = true;
-  const { error } = await sb.auth.signInWithPassword({ email: $("#lemail").value.trim(), password: $("#lpass").value });
-  $("#lbtn").disabled = false;
-  if (error) $("#lerr").textContent = error.message === "Invalid login credentials" ? "Wrong email or password." : error.message;
+  e.preventDefault(); const btn = $("#lbtn"); if (btn.disabled) return;
+  $("#lerr").textContent = ""; btn.disabled = true; btn.textContent = "Signing in…";
+  let error;
+  try { ({ error } = await Promise.race([sb.auth.signInWithPassword({ email: $("#lemail").value.trim().toLowerCase(), password: $("#lpass").value }),
+    new Promise(r => setTimeout(() => r({ error: { message: "timeout" } }), 20000))])); } catch (err) { error = err; }
+  btn.disabled = false; btn.textContent = "Sign in";
+  if (error) { $("#lerr").textContent = loginError(error); $("#lpass").select(); }
 });
 function clearLocalLogin(){ try { Object.keys(localStorage).filter(k => /^sb-.*-auth-token/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) { /* storage blocked */ } }
 let signingOut = false;
@@ -91,6 +102,25 @@ async function signOut(){
   location.replace(location.pathname + location.search);
 }
 sb.auth.onAuthStateChange((ev, session) => { setTimeout(() => { if (ev === "SIGNED_IN" && !S.me && !S.booting) boot(session); if (ev === "SIGNED_OUT" && !signingOut) { if (S.me) location.reload(); else show("login"); } }, 0); });
+// signed out in another tab → this tab follows
+window.addEventListener("storage", ev => { if (ev.key && /^sb-.*-auth-token/.test(ev.key) && !ev.newValue && S.me && !signingOut) location.replace(location.pathname + location.search); });
+// phone or laptop woken up after a while → check the login is still valid and refresh the data
+let hiddenAt = 0, rechecking = false;
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (!S.me || rechecking || Date.now() - hiddenAt < 60000) return;
+  rechecking = true;
+  try {
+    const { data: u, error } = await sb.auth.getUser();
+    if (error && error.status >= 400 && error.status < 500) { clearLocalLogin(); return location.replace(location.pathname + location.search); }
+    if (u?.user) {
+      const { data: me, error: pe } = await sb.from("trackit_profiles").select("*").eq("id", u.user.id).maybeSingle();
+      if (!pe && !me) { S.me = null; return show("noaccess"); }          // login was removed by the admin
+      if (me && me.role !== S.me.role) return location.reload();           // role changed (e.g. made admin)
+    }
+    await loadAll(); render(true);
+  } catch (e) { /* offline: the Live badge shows Reconnecting */ } finally { rechecking = false; }
+});
 function show(which){ ["login","noaccess","shell"].forEach(id => $("#"+id).classList.toggle("hidden", id !== which)); if (which !== "shell") hideSplash(); }
 function hideSplash(){ const s = $("#splash"); if (!s || s.dataset.out) return; s.dataset.out = "1"; s.classList.add("out"); setTimeout(() => s.remove(), 400); }
 setTimeout(hideSplash, 15000);
@@ -287,8 +317,19 @@ function editEmp(id){
       card_status: fd.card_status_sel === "__custom" ? (fd.card_status_custom || "").trim() : (fd.card_status_sel || "") };
     if (fd.card_status_sel === "__custom" && !row.card_status) { $("#eerr").textContent = "Type the custom card status, or pick one from the list."; return; }
     if (row.expiry) row.expiry_note = "";
-    const { error } = id ? await sb.from("trackit_staff").update(row).eq("id", id) : await sb.from("trackit_staff").insert(row);
-    if (error) { $("#eerr").textContent = error.code === "23505" ? "That Employee ID is already in Trackit." : error.message; return; }
+    if (!row.employee_id || !row.name || !row.store) { $("#eerr").textContent = "Employee ID, name and store can't be empty."; return; }
+    const btn = ev.submitter || $("#ef .actions .btn:not(.ghost)"); if (btn.disabled) return;
+    btn.disabled = true; const label = btn.textContent; btn.textContent = "Saving…";
+    let res;
+    try {
+      // only save if nobody else changed this person since the pop-up was opened
+      res = id ? await (e.updated_at ? sb.from("trackit_staff").update(row).eq("id", id).eq("updated_at", e.updated_at).select("id") : sb.from("trackit_staff").update(row).eq("id", id))
+               : await sb.from("trackit_staff").insert(row);
+    } catch (err) { res = { error: { message: loginError(err) } }; }
+    btn.disabled = false; btn.textContent = label;
+    const { error, data } = res || {};
+    if (error) { $("#eerr").textContent = error.code === "23505" ? "That Employee ID is already in Trackit." : /JWT|token/i.test(error.message) ? "Your login has expired. Sign in again." : error.message; return; }
+    if (id && Array.isArray(data) && data.length === 0) { $("#eerr").innerHTML = `Someone else just changed this person. <button type="button" class="linkbtn" onclick="closeModal();loadAll().then(()=>{render();editEmp('${e.id}')})">Open the latest version</button> and make your change again.`; return; }
     closeModal(); toast(id ? "Saved" : "Employee added"); await loadAll(); render();
   };
 }
@@ -332,8 +373,9 @@ async function uploadPhoto(id, input){
     const up = await sb.storage.from("trackit-cards").upload(path, blob, { contentType: "image/jpeg", upsert: false });
     if (up.error) throw up.error;
     const old = e.card_photo;
-    const { error } = await sb.from("trackit_staff").update({ card_photo: path }).eq("id", id);
+    const { data: upd, error } = await sb.from("trackit_staff").update({ card_photo: path }).eq("id", id).select("updated_at");
     if (error) { await sb.storage.from("trackit-cards").remove([path]); throw error; }
+    if (Array.isArray(upd) && upd[0]?.updated_at) e.updated_at = upd[0].updated_at;
     if (old) sb.storage.from("trackit-cards").remove([old]);
     e.card_photo = path; area.innerHTML = photoArea(e); toast("Card photo saved");
   } catch (err) { area.innerHTML = photoArea(e) + `<div class="err">${esc(err.message || err)}</div>`; }
@@ -351,8 +393,9 @@ async function viewPhoto(id, btn){
 async function removePhoto(id, btn){
   if (!btn.dataset.sure) { btn.dataset.sure = "1"; btn.textContent = "Tap again to remove"; return; }
   const e = findEmp(id); btn.disabled = true;
-  const { error } = await sb.from("trackit_staff").update({ card_photo: "" }).eq("id", id);
+  const { data: upd, error } = await sb.from("trackit_staff").update({ card_photo: "" }).eq("id", id).select("updated_at");
   if (error) { btn.disabled = false; return toast(error.message); }
+  if (Array.isArray(upd) && upd[0]?.updated_at) e.updated_at = upd[0].updated_at;
   sb.storage.from("trackit-cards").remove([e.card_photo]);
   e.card_photo = ""; $("#photoArea").innerHTML = photoArea(e); toast("Photo removed");
 }
@@ -794,9 +837,17 @@ function delLogin(id){
 }
 
 // ---------- modal ----------
-function modal(html, wide){ $("#modalRoot").innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal ${wide?"wide":""}" role="dialog" aria-modal="true">${html}</div></div>`; }
+function modal(html, wide){ $("#modalRoot").innerHTML = `<div class="modal-bg" onclick="if(event.target===this)softClose()"><div class="modal ${wide?"wide":""}" role="dialog" aria-modal="true">${html}</div></div>`; }
 function closeModal(){ $("#modalRoot").innerHTML = ""; }
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+// tapping outside or pressing Esc never throws away typed changes
+function softClose(){
+  const f = document.querySelector("#modalRoot form");
+  if (f && f.dataset.dirty) { const n = f.querySelector(".unsaved") || f.insertAdjacentElement("beforeend", Object.assign(document.createElement("p"), { className: "unsaved note" })); n.textContent = "You have unsaved changes — press Save to keep them, or Cancel to discard."; return; }
+  closeModal();
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape" && $("#modalRoot").innerHTML) softClose(); });
+document.addEventListener("input", e => { const f = e.target.closest && e.target.closest("#modalRoot form"); if (f && e.target.type !== "file") f.dataset.dirty = "1"; });
+document.addEventListener("change", e => { const f = e.target.closest && e.target.closest("#modalRoot form"); if (f && e.target.type !== "file") f.dataset.dirty = "1"; });
 
 // ---------- start ----------
 sb.auth.getSession().then(({ data }) => data.session ? boot(data.session) : show("login")).catch(() => { clearLocalLogin(); show("login"); });

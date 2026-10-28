@@ -149,3 +149,10 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
   #report .r-num{text-align:right;font-weight:700}
   #report .r-foot{margin-top:18px;color:#5E574C;font-size:8.5pt;border-top:1px solid #E4D7C5;padding-top:6px}
 }
+
+/* ---------- sign-in + unsaved changes ---------- */
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:64px}
+.pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--tan-d);font-weight:700;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer}
+.pw-eye:focus-visible{outline:2px solid var(--tan-d)}
+.unsaved{color:var(--amber);font-weight:600;margin:10px 0 0}
