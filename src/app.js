@@ -5,7 +5,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const DUE_DAYS = 45;
 const NATIONALITIES = ["Saudi","Bangladeshi","Indian","Filipino","Pakistani","Nepali","Egyptian","Sudanese","Yemeni","Eritrean","Sri Lankan","Jordanian","Syrian","Other"];
 const CARD_STATUSES = ["Needs medical exam","Medical scheduled","Training pending","Training done but card status not updated","Rescheduled for exam","Need to pay SAR 60","Needs Balady registration","Waiting for health-center visit","Renewal in process"];
-const COLS = ["Employee No","Name","Iqama / National ID","Nationality","Mobile","Job Role","Store / Department","Expiry Date","Card Status","Notes","Check Needed"];
+const COLS = ["Iqama / National ID","Employee No","Name","Store / Department","Job Role","Nationality","Mobile","Expiry Date","Card Status","Remarks"];
 
 // ---------- state ----------
 const S = { me:null, emps:[], left:[], weeks:[], profiles:[], view:"dashboard", page:1, filters:{q:"",store:"",status:"",cs:"",am:"",rom:"",city:"",region:""}, sortBy:"expiry", groupBy:"store", map:{}, alias:{}, mapMeta:null, alertTab:"exp", vTab:"todo", vUnit:"", vq:"", depts:[], chat:[], channel:null, imp:null };
@@ -646,8 +646,8 @@ function delEmp(id){
   <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="dbtn">Delete</button></div>`);
   $("#dbtn").onclick = async () => { const { error } = await sb.from("trackit_staff").delete().eq("id", id); if (error) return toast(error.message); closeModal(); toast("Deleted"); await loadAll(); render(); };
 }
-const empRow = e => [eid(e), e.name, e.iqama, e.nationality, e.mobile, e.job_role || "", e.unit_kind === "store" ? e.unit : e.unit_kind === "dept" ? e.unit : "Unassigned", e.expiry || "", e.card_status || "", e.file_note || "", e.check_note || ""];
-function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Workplace name", "Status", "Verified by", "Verified on", "AM remarks", "Area manager", "ROM", "City", "Region"], ...filtered().map(e => [...empRow(e), placeOf(e), e.left_at ? "Left" : STATUS_LABEL[statusOf(e)], e.verified_by_name || "", e.verified_at ? e.verified_at.slice(0, 10) : "", e.remarks || "", ...["area_manager", "rom", "city", "region"].map(k => geo(k, e) || "")])]); }
+const empRow = e => [e.iqama, eid(e), e.name, e.unit_kind === "unassigned" ? "" : e.unit, e.job_role || "", e.nationality, e.mobile, e.expiry || "", e.card_status || "", e.remarks || ""];
+function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Workplace name", "Status", "Verified by", "Verified on", "Area manager", "ROM", "City", "Region"], ...filtered().map(e => [...empRow(e), placeOf(e), e.left_at ? "Left" : STATUS_LABEL[statusOf(e)], e.verified_by_name || "", e.verified_at ? e.verified_at.slice(0, 10) : "", ...["area_manager", "rom", "city", "region"].map(k => geo(k, e) || "")])]); }
 function downloadCSV(name, rows){
   const csv = "﻿" + rows.map(r => r.map(v => { v = String(v ?? ""); if (/^[=+\-@\t\r]/.test(v) && !/^-?\d/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(",")).join("\r\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -702,7 +702,7 @@ function normNationality(v){
 function normMobile(v){ return String(v||"").replace(/\D/g,"").replace(/^(00)?966/, "").replace(/^0+/, ""); }
 async function readWorkbook(file){
   await needXLSX();
-  const wb = XLSX.read(await file.arrayBuffer(), { type:"array", cellDates:true });
+  const wb = XLSX.read(await file.arrayBuffer(), { type:"array", cellDates:false });   // Excel day numbers are converted exactly (Date objects can drift a day)
   const rows = []; const sheets = [];
   for (const name of wb.SheetNames) {
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, defval:"", raw:true });
@@ -749,9 +749,9 @@ function importView(){
   return header("Import", "Upload the staff list (admins only)") + `
   <div class="steps">
     <div class="card pad"><div class="step-n">1</div><h3>The staff file</h3>
-      <p class="note">One row per person, with these columns: <b>${COLS.join(", ")}</b>. <b>Store / Department</b> is a store code (like B48), a department name, or blank for Unassigned.</p>
+      <p class="note">One row per person, with these columns: <b>${COLS.join(", ")}</b>. <b>Store / Department</b> is a store code (like B48) or a department — pick it from the dropdown in the template. Leave it blank for Unassigned. Area manager, ROM, city and region are filled in from the store code.</p>
       <p class="note">People are matched by <b>Iqama / National ID</b>, then Employee No. New people are added; existing people get new details. A date a store has already <b>verified</b> is never overwritten, and people the app has already placed in a store keep their store.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn tan" onclick="downloadTemplate(false)">Download template</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn tan" href="trackit-template.xlsx" download>Download template</a>
       ${S.emps.length ? `<button class="btn ghost" onclick="downloadTemplate(true)">Download current list</button>` : ""}</div>
     </div>
     <div class="card pad"><div class="step-n">2</div><h3>Upload</h3>
@@ -784,7 +784,7 @@ async function downloadTemplate(withData){
   try { await needXLSX(); } catch (e) { return toast(e.message); }
   const data = withData ? S.emps.map(e => { const r = empRow(e); r[7] = e.expiry ? new Date(e.expiry + "T00:00:00") : ""; return r; }) : [];
   const ws = XLSX.utils.aoa_to_sheet([COLS, ...data], { cellDates:true });
-  ws["!cols"] = [14,30,18,14,14,22,22,14,26,30,30].map(w => ({ wch:w }));
+  ws["!cols"] = [20,14,32,22,18,14,14,15,30,36].map(w => ({ wch:w }));
   for (let i = 1; i <= data.length; i++) { const c = ws[XLSX.utils.encode_cell({ r:i, c:7 })]; if (c && c.t === "d") c.z = "dd-mmm-yyyy"; }
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Employees");
   XLSX.writeFile(wb, withData ? `trackit-current-list-${new Date().toISOString().slice(0,10)}.xlsx` : "trackit-template.xlsx");
