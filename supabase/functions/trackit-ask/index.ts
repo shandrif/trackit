@@ -48,7 +48,7 @@ async function askGemini(key: string, model: string, system: string, turns: { ro
       contents: turns.map((t) => ({ role: t.role === "assistant" ? "model" : "user", parts: [{ text: t.content }] })),
       generationConfig: { temperature: 0.2, maxOutputTokens: 4096, ...(thinking ? { thinkingConfig: /gemini-2\./.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "low" } } : {}) },
     }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(15000),
   });
   let r = await call(!noThinkCfg.has(model));
   if (r.status === 400 && !noThinkCfg.has(model)) {
@@ -198,11 +198,13 @@ By region:\n${fmt(byRegion, 30)}\n\nBy city:\n${fmt(byCity, 60)}\n\nBy ROM (regi
     const ready = all.filter((m) => (busyUntil.get(m) || 0) < Date.now());
     const order = ready.length ? ready : all;
     let quota = false;
+    const hung = new Set<string>();
     for (let round = 0; round < 2; round++) {
       if (round === 1) await new Promise((r) => setTimeout(r, 2000)); // everything busy: wait a moment, try once more
       for (const model of order) {
+        if (round === 1 && hung.has(model)) continue;
         let res: { answer?: string; status: number; body?: string };
-        try { res = await askGemini(gkey, model, system, turns); } catch (err) { res = { status: 0, body: String(err) }; }
+        try { res = await askGemini(gkey, model, system, turns); } catch (err) { res = { status: 0, body: String(err) }; busyUntil.set(model, Date.now() + 10 * 60_000); hung.add(model); } // a model that hangs is skipped for 10 minutes
         if (res.answer) return json({ answer: res.answer, ...(isTest ? { model, ms: Date.now() - t0, models: order } : {}) });
         fails.push(`${model}: ${res.status} ${res.body || ""}`.slice(0, 200));
         console.log("gemini fail", model, res.status, res.body);
