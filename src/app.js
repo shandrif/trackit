@@ -165,7 +165,7 @@ document.addEventListener("visibilitychange", async () => {
       if (!pe && !me) { S.me = null; return show("noaccess"); }          // login was removed by the admin
       if (me && (me.role !== S.me.role || me.scope_kind !== S.me.scope_kind || me.scope_value !== S.me.scope_value)) return location.reload();   // access changed
     }
-    await loadAll(); render(true);
+    if (Date.now() - hiddenAt > 10 * 60000) { await loadAll(); render(true); }   // live updates cover shorter breaks
   } catch (e) { /* offline: the Live badge shows Reconnecting */ } finally { rechecking = false; }
 });
 function show(which){ ["login","noaccess","shell"].forEach(id => $("#"+id).classList.toggle("hidden", id !== which)); if (which !== "shell") hideSplash(); }
@@ -222,17 +222,38 @@ async function loadAll(){
   if (!al.error && Array.isArray(al.data)) { S.alias = {}; for (const x of al.data) S.alias[x.store] = x.code; }
   if (!mm.error) S.mapMeta = mm.data || null;
   mapCache = new Map();
+  await loadAdmin();
+}
+async function loadAdmin(){
   if (isAdmin()) {
     const [{ data }, { data: st }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
       sb.from("trackit_settings").select("email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result").eq("id", 1).maybeSingle()]);
     S.profiles = data || []; S.settings = st;
   }
 }
-let reloadT = null;
+// ---------- live updates: only the changed person travels, never the whole list ----------
+const byExpiry = (a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : (a.expiry || "0000") > (b.expiry || "0000") ? 1 : 0;
+function putRow(row, goneId){
+  const id = row?.id || goneId;
+  S.emps = S.emps.filter(e => e.id !== id); S.left = S.left.filter(e => e.id !== id);
+  if (row) { if (row.left_at) { S.left.push(row); S.left.sort((a, b) => a.left_at < b.left_at ? 1 : -1); } else { S.emps.push(row); S.emps.sort(byExpiry); } }
+}
+function applyChange(p){
+  if (p.eventType === "DELETE") putRow(null, p.old?.id);
+  else if (p.new?.id) putRow(p.new);
+}
+// after my own save: fetch just that one person (they may have moved out of my list)
+async function refreshOne(id){
+  const { data, error } = await sb.from("trackit_staff").select("*").eq("id", id).maybeSingle();
+  if (error) return loadAll();
+  putRow(data || null, id);
+}
+let reloadT = null, pending = [];
 function subscribe(){
   S.channel = sb.channel("trackit-staff")
-    .on("postgres_changes", { event: "*", schema: "public", table: "trackit_staff" }, () => {
-      clearTimeout(reloadT); reloadT = setTimeout(async () => { await loadAll(); render(true); }, 800);
+    .on("postgres_changes", { event: "*", schema: "public", table: "trackit_staff" }, p => {
+      pending.push(p);
+      clearTimeout(reloadT); reloadT = setTimeout(() => { const ps = pending; pending = []; ps.forEach(applyChange); render(true); }, 400);
     }).subscribe(status => {
       const online = status === "SUBSCRIBED";
       document.body.classList.toggle("offline", !online);
@@ -382,7 +403,7 @@ async function vRelease(id, btn){
   btn.disabled = true;
   const { error } = await sb.rpc("trackit_move_staff", { p_id: id, p_kind: "unassigned", p_unit: "" });
   if (error) { btn.disabled = false; return toast(error.message); }
-  toast("Moved to Unassigned — their real store can claim them"); await loadAll(); render();
+  toast("Moved to Unassigned — their real store can claim them"); await refreshOne(id); render();
 }
 // ---------- find a person and bring them to my store ----------
 function targets(){
@@ -416,7 +437,7 @@ async function fpMove(id, btn){
   const { data, error } = await sb.rpc("trackit_move_staff", { p_id: id, p_kind: k, p_unit: u || "" });
   if (error) { btn.disabled = false; btn.textContent = "Move here"; return toast(error.message === "Not allowed" ? "You can't move this person there" : error.message); }
   btn.textContent = data === "unchanged" ? "Already here" : "Moved ✓"; toast(data === "unchanged" ? "Already there" : `Moved to ${placeLabel(k, u)} — verify them now`);
-  await loadAll(); if (S.view === "verify" || S.view === "employees") render();
+  await refreshOne(id); if (S.view === "verify" || S.view === "employees") render();
 }
 
 // ---------- employees ----------
@@ -559,7 +580,7 @@ function editEmp(id){
     if (!error && moving) ({ error } = await sb.rpc("trackit_move_staff", { p_id: id, p_kind: pk, p_unit: pu || "" }));
     btn.disabled = false; btn.textContent = label;
     if (error) { $("#eerr").textContent = error.code === "23505" ? "That Employee No. or Iqama is already in Trackit — use Find a person on the Verify page to move them to you." : error.code === "42501" || /row-level security/i.test(error.message) ? "You can only add people to your own store or department." : /JWT|token/i.test(error.message) ? "Your login has expired. Sign in again." : error.message; return; }
-    closeModal(); toast(moving ? `Moved to ${placeLabel(pk, pu)}` : id ? "Saved" : "Employee added"); await loadAll(); render();
+    closeModal(); toast(moving ? `Moved to ${placeLabel(pk, pu)}` : id ? "Saved" : "Employee added"); if (id) await refreshOne(id); else await loadAll(); render();
   };
 }
 const fmtTS = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" }); };
@@ -570,7 +591,7 @@ async function setLeft(id, left, btn){
   if (btn) btn.disabled = true;
   const { error } = await sb.from("trackit_staff").update({ left_at: left ? new Date().toISOString() : null }).eq("id", id);
   if (error) { if (btn) btn.disabled = false; return toast(error.message); }
-  closeModal(); toast(left ? "Marked as left — not counted any more" : "Brought back"); await loadAll(); render();
+  closeModal(); toast(left ? "Marked as left — not counted any more" : "Brought back"); await refreshOne(id); render();
 }
 
 // ---------- card photo ----------
@@ -644,7 +665,7 @@ function delEmp(id){
   const e = findEmp(id);
   modal(`<h3>Delete ${esc(e.name)}?</h3><p class="note">This removes ${esc(e.name)}${eid(e) ? ` (${esc(eid(e))})` : ""} and their history from Trackit. It can't be undone. If they left the company, use <b>Mark as left</b> instead — it keeps their record.</p>
   <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="dbtn">Delete</button></div>`);
-  $("#dbtn").onclick = async () => { const { error } = await sb.from("trackit_staff").delete().eq("id", id); if (error) return toast(error.message); closeModal(); toast("Deleted"); await loadAll(); render(); };
+  $("#dbtn").onclick = async () => { const { error } = await sb.from("trackit_staff").delete().eq("id", id); if (error) return toast(error.message); closeModal(); toast("Deleted"); putRow(null, id); render(); };
 }
 const empRow = e => [e.iqama, eid(e), e.name, e.unit_kind === "unassigned" ? "" : e.unit, e.job_role || "", e.nationality, e.mobile, e.expiry || "", e.card_status || "", e.remarks || ""];
 function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Workplace name", "Status", "Verified by", "Verified on", "Area manager", "ROM", "City", "Region"], ...filtered().map(e => [...empRow(e), placeOf(e), e.left_at ? "Left" : STATUS_LABEL[statusOf(e)], e.verified_by_name || "", e.verified_at ? e.verified_at.slice(0, 10) : "", ...["area_manager", "rom", "city", "region"].map(k => geo(k, e) || "")])]); }
@@ -1090,7 +1111,7 @@ async function testAlert(){
   if (!(await saveAlerts(true))) { b.disabled = false; b.textContent = "Send test email now"; return; }
   const { data, error } = await sb.functions.invoke("trackit-email", { body: { mode: "test" } });
   let msg = data?.error; if (!data?.ok && !msg && error?.context?.json) { try { msg = (await error.context.json()).error; } catch {} }
-  await loadAll(); render();
+  await loadAdmin(); render();
   if (data?.ok) toast(`Test email sent to ${data.sent} receiver${data.sent === 1 ? "" : "s"}`);
   else { const e = $("#alertErr"); if (e) e.textContent = msg || error?.message || "Couldn't send"; }
 }
@@ -1106,7 +1127,7 @@ function addLogin(){
     const fd = Object.fromEntries(new FormData(ev.target)), acc = readAccess(fd); if (acc.error) { $("#lbtn2").disabled = false; return $("#lerr2").textContent = acc.error; }
     const err = await adminCall({ action:"create", full_name: fd.full_name, email: fd.email, password: fd.password, ...acc });
     $("#lbtn2").disabled = false; if (err) return $("#lerr2").textContent = err;
-    closeModal(); toast("Login created — share the password privately"); await loadAll(); render(); };
+    closeModal(); toast("Login created — share the password privately"); await loadAdmin(); render(); };
 }
 // who a login can see: everything, one area manager's stores, one store, or one department
 function accessFields(role, kind, val){
@@ -1132,7 +1153,7 @@ function setAccess(id){
   modal(`<h3>Change access</h3><p class="note">For ${esc(p.full_name || p.email)}</p><form id="af">${accessFields(p.role, p.scope_kind, p.scope_value)}
     <div class="err" id="aerr"></div><div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn">Save</button></div></form>`);
   $("#af").onsubmit = async ev => { ev.preventDefault(); const acc = readAccess(Object.fromEntries(new FormData(ev.target))); if (acc.error) return $("#aerr").textContent = acc.error;
-    const err = await adminCall({ action: "set_access", id, ...acc }); if (err) return $("#aerr").textContent = err; closeModal(); toast("Access saved"); await loadAll(); render(); };
+    const err = await adminCall({ action: "set_access", id, ...acc }); if (err) return $("#aerr").textContent = err; closeModal(); toast("Access saved"); await loadAdmin(); render(); };
 }
 // one login per store, with a printable list of passwords
 const genPw = () => { const c = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", a = new Uint32Array(10); crypto.getRandomValues(a); return [...a].map(x => c[x % c.length]).join(""); };
@@ -1154,7 +1175,7 @@ function bulkLogins(){
       if (error || !data?.results) { fails.push(...items.map(x => [x.code, data?.error || error?.message || "failed"])); continue; }
       for (const r of data.results) { const it = items.find(x => x.code === r.code); if (r.ok) made.push(it); else fails.push([r.code, r.error]); }
     }
-    await loadAll(); render(); printLogins(made, fails);
+    await loadAdmin(); render(); printLogins(made, fails);
   };
 }
 function printLogins(made, fails){
@@ -1183,7 +1204,7 @@ function delLogin(id){
   const m = S.profiles.find(x => x.id === id);
   modal(`<h3>Remove login?</h3><p class="note">${esc(m.email)} won't be able to sign in. Employee data stays in Trackit.</p><div class="err" id="derr"></div>
   <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="dm">Remove</button></div>`);
-  $("#dm").onclick = async () => { const err = await adminCall({ action:"delete", id }); if (err) return $("#derr").textContent = err; closeModal(); toast("Removed"); await loadAll(); render(); };
+  $("#dm").onclick = async () => { const err = await adminCall({ action:"delete", id }); if (err) return $("#derr").textContent = err; closeModal(); toast("Removed"); await loadAdmin(); render(); };
 }
 
 // ---------- modal ----------
