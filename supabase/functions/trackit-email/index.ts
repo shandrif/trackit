@@ -27,16 +27,18 @@ function riyadhNow() {
   const d = new Date(Date.now() + 3 * 3600000);
   return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours(), weekday: d.getUTCDay() };
 }
+const DUE = 45;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmt = (d: string) => { const [y, m, dd] = d.split("-"); return `${dd} ${MONTHS[+m - 1]} ${y}`; };
 
 function buildEmail(rows: any[], today: string) {
   const t = Date.parse(today);
-  const exp: any[] = [], due: any[] = []; let missing = 0;
+  const exp: any[] = [], due: any[] = []; let missing = 0, unverified = 0;
   for (const r of rows) {
+    if (!r.verified_at) { unverified++; continue; }      // only dates confirmed on the Balady website raise alerts
     if (!r.expiry) { missing++; continue; }
     const n = Math.round((Date.parse(r.expiry) - t) / DAY);
-    if (n < 0) exp.push({ ...r, n }); else if (n <= 30) due.push({ ...r, n });
+    if (n < 0) exp.push({ ...r, n }); else if (n <= DUE) due.push({ ...r, n });
   }
   exp.sort((a, b) => a.n - b.n); due.sort((a, b) => a.n - b.n);
   const cell = "padding:8px 10px;border-bottom:1px solid #EFE5D8;font-size:13px;color:#111";
@@ -44,7 +46,7 @@ function buildEmail(rows: any[], today: string) {
   const table = (list: any[], kind: "exp" | "due") => list.length ? `
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fff;border:1px solid #EFE5D8;border-radius:10px">
       <tr><th style="${head}">Employee</th><th style="${head}">Store</th><th style="${head}">Expiry</th></tr>
-      ${list.map((r) => `<tr><td style="${cell}"><b>${esc(r.name)}</b><br><span style="color:#6E655B;font-size:12px">${esc(r.employee_id)}</span></td><td style="${cell}">${esc(r.store)}</td>
+      ${list.map((r) => `<tr><td style="${cell}"><b>${esc(r.name)}</b><br><span style="color:#6E655B;font-size:12px">${esc(r.employee_id || "")}</span></td><td style="${cell}">${esc(r.unit_kind === "unassigned" ? "Unassigned" : r.store || r.unit)}</td>
         <td style="${cell};white-space:nowrap">${fmt(r.expiry)}<br><span style="font-size:12px;color:${kind === "exp" ? "#C2412D" : "#A9875F"}">${kind === "exp" ? `${-r.n} day${r.n === -1 ? "" : "s"} ago` : r.n === 0 ? "today" : `in ${r.n} day${r.n === 1 ? "" : "s"}`}</span></td></tr>`).join("")}
     </table>` : `<p style="font-size:13px;color:#6E655B;margin:0">Nobody.</p>`;
   const kpi = (label: string, v: number, col: string) => `<td style="padding:12px 14px;background:#fff;border:1px solid #EFE5D8;border-radius:10px" width="33%"><div style="font-size:12px;color:#6E655B">${label}</div><div style="font-size:26px;font-weight:700;color:${col}">${v}</div></td>`;
@@ -56,15 +58,16 @@ function buildEmail(rows: any[], today: string) {
       <span style="font-size:18px;font-weight:700;vertical-align:middle;margin-left:8px">Trackit</span>
       <span style="float:right;color:#D4B38B;font-size:13px;line-height:34px">Baladiya card alert · ${fmt(today)}</span></td></tr>
     <tr><td style="padding:18px 0 6px"><table role="presentation" width="100%" cellspacing="8" cellpadding="0" style="margin:0 -8px"><tr>
-      ${kpi("Expired", exp.length, "#C2412D")}${kpi("Due in 30 days", due.length, "#A9875F")}${kpi("Date missing", missing, "#6E655B")}</tr></table></td></tr>
+      ${kpi("Expired", exp.length, "#C2412D")}${kpi(`Due in ${DUE} days`, due.length, "#A9875F")}${kpi("Not on Balady", missing, "#6E655B")}</tr></table></td></tr>
     <tr><td style="padding:14px 0 8px"><h2 style="margin:0;font-size:16px;color:#C2412D">Expired — renew now (${exp.length})</h2></td></tr>
     <tr><td>${table(exp, "exp")}</td></tr>
-    <tr><td style="padding:20px 0 8px"><h2 style="margin:0;font-size:16px;color:#A9875F">Expiring within 30 days (${due.length})</h2></td></tr>
+    <tr><td style="padding:20px 0 8px"><h2 style="margin:0;font-size:16px;color:#A9875F">Expiring within ${DUE} days (${due.length})</h2></td></tr>
     <tr><td>${table(due, "due")}</td></tr>
+    ${unverified ? `<tr><td style="padding:16px 0 0;font-size:13px;color:#6E655B">${unverified} staff are not verified on Balady yet, so they are not in this email. Stores verify them on the Verify page in Trackit.</td></tr>` : ""}
     <tr><td align="center" style="padding:24px 0 8px"><a href="${APP_URL}#alerts" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px">Open Trackit</a></td></tr>
     <tr><td align="center" style="padding:8px 0;font-size:11px;color:#9b8f80">Sent automatically by Trackit. Change receivers or turn alerts off in Trackit → Users → Email alerts.</td></tr>
   </table></td></tr></table></body></html>`;
-  const subject = `Trackit: ${exp.length} expired, ${due.length} expiring within 30 days`;
+  const subject = `Trackit: ${exp.length} expired, ${due.length} expiring within ${DUE} days`;
   return { html, subject, exp: exp.length, due: due.length };
 }
 
@@ -103,7 +106,7 @@ Deno.serve(async (req) => {
 
     const rows: any[] = [];
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await service.from("trackit_staff").select("employee_id,name,store,expiry").is("left_at", null).order("expiry").order("id").range(from, from + 999);
+      const { data, error } = await service.from("trackit_staff").select("employee_id,name,store,expiry,unit_kind,unit,verified_at").is("left_at", null).order("expiry").order("id").range(from, from + 999);
       if (error) return json({ error: error.message }, 500);
       rows.push(...(data || []));
       if (!data || data.length < 1000) break;

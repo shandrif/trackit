@@ -98,9 +98,10 @@ function matchStore(store: string, MAP: Record<string, any>, ALIAS: Record<strin
 }
 
 const DAY = 86400000;
+const DUE = 45;
 function status(exp: string, today: number) {
   const d = Math.round((Date.parse(exp) - today) / DAY);
-  return d < 0 ? `EXPIRED ${-d} days ago` : d <= 30 ? `due in ${d} days` : `ok (${d} days)`;
+  return d < 0 ? `EXPIRED ${-d} days ago` : d <= DUE ? `due in ${d} days` : `ok (${d} days)`;
 }
 
 Deno.serve(async (req) => {
@@ -112,6 +113,7 @@ Deno.serve(async (req) => {
     const service = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
     const testToken = req.headers.get("x-trackit-token") || "";
     let isTest = false;
+    let scope = { kind: "all", value: "" };
     if (testToken) {
       const { data: st } = await service.from("trackit_settings").select("cron_token").eq("id", 1).single();
       if (!st || st.cron_token !== testToken) return json({ error: "Not allowed" }, 401);
@@ -119,8 +121,9 @@ Deno.serve(async (req) => {
     } else {
       const { data: u } = await service.auth.getUser(auth.replace("Bearer ", ""));
       if (!u?.user) return json({ error: "Not signed in" }, 401);
-      const { data: me } = await service.from("trackit_profiles").select("id,role").eq("id", u.user.id).maybeSingle();
+      const { data: me } = await service.from("trackit_profiles").select("id,role,scope_kind,scope_value").eq("id", u.user.id).maybeSingle();
       if (!me) return json({ error: "Your login hasn't been added to Trackit yet." }, 403);
+      if (me.role !== "admin") scope = { kind: me.scope_kind || "all", value: me.scope_value || "" };
     }
     const { question, history } = await req.json();
     if (!question || String(question).length > 600) return json({ error: "Please ask a shorter question." }, 400);
@@ -129,7 +132,7 @@ Deno.serve(async (req) => {
     for (let from = 0; ; from += 1000) {
       // Only names, stores, dates and remarks — never Iqama or mobile numbers
       const { data, error } = await service.from("trackit_staff")
-        .select("name,store,nationality,expiry,expiry_note,remarks,card_status")
+        .select("name,store,nationality,expiry,expiry_note,remarks,card_status,unit_kind,unit,verified_at,job_role")
         .is("left_at", null).order("expiry", { nullsFirst: true }).order("id").range(from, from + 999);
       if (error) return json({ error: error.message }, 400);
       rows.push(...(data || []));
@@ -138,40 +141,49 @@ Deno.serve(async (req) => {
     const MAP: Record<string, any> = {}, ALIAS: Record<string, string> = {};
     const [{ data: mp }, { data: al }] = await Promise.all([service.from("trackit_store_map").select("code,branch,area_manager,rom,city,region"), service.from("trackit_store_alias").select("store,code")]);
     for (const m of mp || []) MAP[m.code] = m;
+    // each login only hears about its own store, department or area
+    const visible = (r: any) => scope.kind === "all" || (scope.kind === "store" && r.unit_kind === "store" && r.unit === scope.value)
+      || (scope.kind === "dept" && r.unit_kind === "dept" && r.unit === scope.value) || (scope.kind === "am" && r.unit_kind === "store" && MAP[r.unit]?.area_manager === scope.value);
+    const mine = rows.filter(visible);
+    const place = (r: any) => r.unit_kind === "unassigned" ? "Unassigned" : (r.store || r.unit || "Unassigned");
     for (const x of al || []) ALIAS[x.store] = x.code;
     const mcache = new Map<string, any>();
     const mapOf = (s: string) => { if (!mcache.has(s)) mcache.set(s, Object.keys(MAP).length ? matchStore(s, MAP, ALIAS) : null); return mcache.get(s); };
+    const mapRow = (r: any) => r.unit_kind === "store" ? (MAP[r.unit] || null) : r.unit_kind ? null : mapOf(r.store || "");
+    const geo = (r: any, k: string) => { const m = mapRow(r); return m ? m[k] : r.unit_kind === "dept" ? `${r.unit} (department)` : "Unassigned"; };
     const now = new Date(); const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const todayStr = new Date(today).toISOString().slice(0, 10);
-    type G = { total: number; expired: number; due: number; missing: number };
-    const add = (m: Record<string, G>, k: string) => (m[k] ??= { total: 0, expired: 0, due: 0, missing: 0 });
-    let expired = 0, due = 0, ok = 0, missing = 0;
+    type G = { total: number; unverified: number; expired: number; due: number; missing: number };
+    const add = (m: Record<string, G>, k: string) => (m[k] ??= { total: 0, unverified: 0, expired: 0, due: 0, missing: 0 });
+    let expired = 0, due = 0, ok = 0, missing = 0, unverified = 0;
     const byStore: Record<string, G> = {}, byAM: Record<string, G> = {}, byROM: Record<string, G> = {}, byCity: Record<string, G> = {}, byRegion: Record<string, G> = {};
     const urgent: string[] = [];
     const cardCount: Record<string, number> = {};
-    for (const r of rows) {
-      const m = mapOf(r.store || "");
-      const gs = [add(byStore, r.store || "(no store)"), add(byAM, m?.area_manager || "(not mapped)"), add(byROM, m?.rom || "(not mapped)"), add(byCity, m?.city || "(not mapped)"), add(byRegion, m?.region || "(not mapped)")];
+    for (const r of mine) {
+      const gs = [add(byStore, place(r)), add(byAM, geo(r, "area_manager")), add(byROM, geo(r, "rom")), add(byCity, geo(r, "city")), add(byRegion, geo(r, "region"))];
       let st: string;
-      if (!r.expiry) { missing++; st = "missing"; } else { const d = Math.round((Date.parse(r.expiry) - today) / DAY); st = d < 0 ? "expired" : d <= 30 ? "due" : "ok"; }
+      // only dates confirmed on the Balady website count
+      if (!r.verified_at) { unverified++; st = "unverified"; }
+      else if (!r.expiry) { missing++; st = "missing"; } else { const d = Math.round((Date.parse(r.expiry) - today) / DAY); st = d < 0 ? "expired" : d <= DUE ? "due" : "ok"; }
       if (st === "expired") expired++; else if (st === "due") due++; else if (st === "ok") ok++;
       for (const g of gs) { g.total++; if (st !== "ok") (g as any)[st]++; }
       if (r.card_status) cardCount[r.card_status] = (cardCount[r.card_status] || 0) + 1;
-      if ((st !== "ok" || r.card_status) && urgent.length < 400) {
-        urgent.push(`${r.name} | ${r.store} | ${r.expiry ? `expiry ${r.expiry}, ${status(r.expiry, today)}` : `NO DATE (file said: ${r.expiry_note || "blank"})`}${r.card_status ? " | card status: " + String(r.card_status).slice(0, 80) : ""}${r.remarks ? " | AM remark: " + String(r.remarks).slice(0, 80) : ""}`);
+      if (st !== "unverified" && (st !== "ok" || r.card_status) && urgent.length < 400) {
+        urgent.push(`${r.name} | ${place(r)} | ${r.expiry ? `expiry ${r.expiry}, ${status(r.expiry, today)}` : `NO DATE (file said: ${r.expiry_note || "blank"})`}${r.card_status ? " | card status: " + String(r.card_status).slice(0, 80) : ""}${r.remarks ? " | AM remark: " + String(r.remarks).slice(0, 80) : ""}`);
       }
     }
     const fmt = (m: Record<string, G>, n: number) => Object.entries(m).sort((a, b) => (b[1].expired + b[1].due + b[1].missing) - (a[1].expired + a[1].due + a[1].missing)).slice(0, n)
-      .map(([k, v]) => { return `${k}: ${v.total} staff, ${v.expired} expired, ${v.due} due in 30 days, ${v.missing} no date`; }).join("\n");
-    const storeInfo = Object.keys(byStore).map((s) => { const m = mapOf(s === "(no store)" ? "" : s); return m ? `${s} → area manager ${m.area_manager}, ROM ${m.rom}, ${m.city}, ${m.region}` : `${s} → not mapped`; }).join("\n");
-    const context = `Today is ${todayStr}. Baladiya health card records: ${rows.length}. Expired: ${expired}. Due within 30 days: ${due}. Date missing: ${missing}. OK: ${ok}.
+      .map(([k, v]) => { return `${k}: ${v.total} staff, ${v.total - v.unverified} verified on Balady, ${v.expired} expired, ${v.due} due in ${DUE} days, ${v.missing} no date`; }).join("\n");
+    const seen = new Set<string>(); const storeInfo = mine.filter((r) => r.unit_kind === "store" && MAP[r.unit] && !seen.has(r.unit) && seen.add(r.unit)).map((r) => { const m = MAP[r.unit]; return `${m.branch} (${m.code}) → area manager ${m.area_manager}, ROM ${m.rom}, ${m.city}, ${m.region}`; }).join("\n");
+    const who = scope.kind === "all" ? "the whole company" : scope.kind === "store" ? `store ${MAP[scope.value]?.branch || scope.value} only` : scope.kind === "dept" ? `the ${scope.value} department only` : `area manager ${scope.value}'s stores only`;
+    const context = `Today is ${todayStr}. This user sees ${who}. Staff records: ${mine.length}. Verified on the Balady website: ${mine.length - unverified}. Not verified yet: ${unverified} (their dates are unconfirmed, so they are NOT counted as expired or due). Among verified staff — Expired: ${expired}. Due within ${DUE} days: ${due}. No date on Balady: ${missing}. OK: ${ok}.
 
 Card status counts (where people are in the renewal process): ${Object.entries(cardCount).map(([k, n]) => `${k}: ${n}`).join("; ") || "none recorded"}.
 
-By region:\n${fmt(byRegion, 30)}\n\nBy city:\n${fmt(byCity, 60)}\n\nBy ROM (regional manager):\n${fmt(byROM, 30)}\n\nBy area manager:\n${fmt(byAM, 60)}\n\nBy store:\n${fmt(byStore, 150)}\n\nWhich area manager, ROM, city and region each store belongs to:\n${storeInfo || "none"}\n\nEveryone expired, due within 30 days, with no date, or with a card status (most overdue first):\n${urgent.join("\n") || "none"}`;
+By region:\n${fmt(byRegion, 30)}\n\nBy city:\n${fmt(byCity, 60)}\n\nBy ROM (regional manager):\n${fmt(byROM, 30)}\n\nBy area manager:\n${fmt(byAM, 60)}\n\nBy store:\n${fmt(byStore, 150)}\n\nWhich area manager, ROM, city and region each store belongs to:\n${storeInfo || "none"}\n\nVerified staff who are expired, due within ${DUE} days, with no date, or with a card status (most overdue first):\n${urgent.join("\n") || "none"}`;
 
     const messages = [
-      { role: "system", content: "You are Trackit's assistant for Half Million Coffee. You help the team keep staff Baladiya (municipality) health cards renewed. Answer ONLY from the data provided. Be brief and practical. Use plain sentences or short '-' lists. Do not use markdown bold, tables or headings. Status rules: expiry date before today = expired; within 30 days = due soon; no date = date missing (needs checking in the Baladiya system); otherwise OK. If the data does not answer the question, say so. Reply in the same language the user writes in (English or Arabic or Hindi)." },
+      { role: "system", content: "You are Trackit's assistant for Half Million Coffee. You help the team keep staff Baladiya (municipality) health cards renewed. Answer ONLY from the data provided. Be brief and practical. Use plain sentences or short '-' lists. Do not use markdown bold, tables or headings. Status rules: only staff verified on the Balady website count; expiry date before today = expired; within 45 days = due soon; verified with no date = not on Balady; otherwise OK. People not verified yet need their store to check them on the Balady website (Verify page in Trackit). If the data does not answer the question, say so. Reply in the same language the user writes in (English or Arabic or Hindi)." },
       { role: "system", content: "DATA:\n" + context },
       ...((Array.isArray(history) ? history : []).slice(-6).map((m: any) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 1500) }))),
       { role: "user", content: String(question) },

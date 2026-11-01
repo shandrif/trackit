@@ -177,3 +177,43 @@ tr.unmapped td:first-child b{color:var(--red)}
   .xf{display:none}
   .xf.open{display:contents}
 }
+/* ---------- verification ---------- */
+.p-unv{background:#EFEAE3;color:#7A6F62}
+.vprog-card{margin-bottom:14px}
+.vprog-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
+.vbar{height:10px;border-radius:99px;background:#ECE6DE;overflow:hidden}
+.vbar i{display:block;height:100%;background:var(--teal);border-radius:99px;transition:width .4s}
+.vbar.sm{height:6px;width:110px;display:inline-block;vertical-align:middle;margin-right:8px}
+.vlist{display:grid;gap:10px}
+.vrow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;padding:14px 16px;transition:opacity .3s,transform .3s}
+.vrow.gone{opacity:0;transform:translateX(20px)}
+.vrow.done{grid-template-columns:1fr auto;align-items:center}
+.vwho b{font-size:15px}
+.vwho .sub{margin-top:2px}
+.vid{display:flex;align-items:center;gap:10px;margin:6px 0 2px;font-size:15px}
+.vid .mono{letter-spacing:.04em;font-weight:700}
+.vcheck{margin-top:6px;font-size:12.5px;background:var(--amber-bg);color:#7A4A12;padding:6px 9px;border-radius:9px}
+.vform{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;align-content:start}
+.vform label{margin:0 0 3px;font-size:12px}
+.vin input{width:100%}
+.vform .chk,.vform .err,.vform .vbtns{grid-column:1/-1}
+.vbtns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.vres{text-align:right;display:grid;gap:3px;justify-items:end}
+.chk{display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;margin:10px 0}
+.chk input{width:18px;height:18px;flex:none}
+.chk.sm{font-size:13px;margin:2px 0}
+.hj{display:block}
+.hj input{width:100%}
+.hj-out{display:block;font-size:12px;min-height:15px;margin-top:2px}
+.hj-out.ok{color:var(--teal-d);font-weight:700}
+.hj-out.bad{color:var(--red)}
+.file-notes{background:#F6F2EC;border-radius:12px;padding:10px 12px;font-size:13px;display:grid;gap:4px;margin-bottom:6px}
+.fp-out{display:grid;gap:8px;margin-top:12px;max-height:46vh;overflow:auto}
+.fp-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px}
+.acc-v.hidden{display:none}
+@media (max-width:760px){
+  .vrow{grid-template-columns:1fr;gap:10px}
+  .vrow.done{grid-template-columns:1fr}
+  .vres{justify-items:start;text-align:left}
+  .vbtns .btn:first-child{flex:1}
+}

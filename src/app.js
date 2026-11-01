@@ -2,21 +2,21 @@
 const SUPABASE_URL = "https://rcufmnidwyycbrtqgqga.supabase.co";
 const SUPABASE_KEY = "sb_publishable_u2__PPq2nDZLyoNnLHxkVA_olltjpHc";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const DUE_DAYS = 30;
+const DUE_DAYS = 45;
 const NATIONALITIES = ["Saudi","Bangladeshi","Indian","Filipino","Pakistani","Nepali","Egyptian","Sudanese","Yemeni","Eritrean","Sri Lankan","Jordanian","Syrian","Other"];
-const CARD_STATUSES = ["Training pending","Training done but card status not updated","Rescheduled for exam","Need to pay SAR 60"];
-const COLS = ["Employee ID","Name","Store","Iqama Number","Nationality","Expiry Date","Mobile Number","AM Remarks"];
+const CARD_STATUSES = ["Needs medical exam","Medical scheduled","Training pending","Training done but card status not updated","Rescheduled for exam","Need to pay SAR 60","Needs Balady registration","Waiting for health-center visit","Renewal in process"];
+const COLS = ["Employee No","Name","Iqama / National ID","Nationality","Mobile","Job Role","Store / Department","Expiry Date","Card Status","Notes","Check Needed"];
 
 // ---------- state ----------
-const S = { me:null, emps:[], left:[], weeks:[], profiles:[], view:"dashboard", page:1, filters:{q:"",store:"",status:"",cs:"",am:"",rom:"",city:"",region:""}, sortBy:"expiry", groupBy:"store", map:{}, alias:{}, mapMeta:null, alertTab:"exp", chat:[], channel:null, imp:null };
+const S = { me:null, emps:[], left:[], weeks:[], profiles:[], view:"dashboard", page:1, filters:{q:"",store:"",status:"",cs:"",am:"",rom:"",city:"",region:""}, sortBy:"expiry", groupBy:"store", map:{}, alias:{}, mapMeta:null, alertTab:"exp", vTab:"todo", vUnit:"", vq:"", depts:[], chat:[], channel:null, imp:null };
 
 // ---------- helpers ----------
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const todayUTC = () => { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()); };
 const daysLeft = d => Math.round((Date.parse(d) - todayUTC()) / 86400000);
-const statusOf = e => { if (!e.expiry) return "miss"; const n = daysLeft(e.expiry); return n < 0 ? "exp" : n <= DUE_DAYS ? "due" : "ok"; };
-const STATUS_LABEL = { exp:"Expired", due:"Due ≤ 30 days", miss:"Date missing", ok:"OK" };
+const statusOf = e => { if (!e.verified_at) return "unv"; if (!e.expiry) return "miss"; const n = daysLeft(e.expiry); return n < 0 ? "exp" : n <= DUE_DAYS ? "due" : "ok"; };
+const STATUS_LABEL = { unv:"Not verified yet", exp:"Expired", due:`Due ≤ ${DUE_DAYS} days`, miss:"Date missing", ok:"OK" };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const fmtDate = d => { if(!d) return ""; const [y,m,dd] = d.split("-"); return `${dd} ${MONTHS[+m-1]} ${y}`; };
 const relDays = d => { const n = daysLeft(d); return n < 0 ? `${-n} day${n===-1?"":"s"} ago` : n === 0 ? "today" : `in ${n} day${n===1?"":"s"}`; };
@@ -56,10 +56,19 @@ function matchStore(store){
   return best && !tie && bestScore >= 0.6 ? { ...best, how: "auto" } : null;
 }
 let mapCache = new Map();
-const mapOf = e => { const k = e.store || ""; if (!mapCache.has(k)) mapCache.set(k, matchStore(k)); return mapCache.get(k); };
-const GROUPS = { store:["Store", e => e.store], am:["Area manager", e => mapOf(e)?.area_manager], rom:["ROM", e => mapOf(e)?.rom], city:["City", e => mapOf(e)?.city], region:["Region", e => mapOf(e)?.region] };
+const mapOf = e => { if (e.unit_kind === "store") return S.map[e.unit] || null; if (e.unit_kind) return null; const k = e.store || ""; if (!mapCache.has(k)) mapCache.set(k, matchStore(k)); return mapCache.get(k); };
+// where someone works: a branch name, a department name, or Unassigned
+const placeOf = e => e.unit_kind === "unassigned" ? "Unassigned" : (e.store || e.unit || "Unassigned");
+const isDept = e => e.unit_kind === "dept";
+// departments have no area manager: they show under their own department name
+const geo = (k, e) => { const m = mapOf(e); if (m) return m[k]; return isDept(e) ? e.unit : e.unit_kind === "unassigned" ? "Unassigned" : ""; };
+const eid = e => e.employee_id || "";
+const scopeKind = () => isAdmin() ? "all" : (S.me?.scope_kind || "all");
+const scopeName = () => { const k = scopeKind(), v = S.me?.scope_value || ""; return k === "store" ? (S.map[v]?.branch || v) : k === "dept" || k === "am" ? v : ""; };
+const placeLabel = (k, u) => k === "store" ? `${S.map[u]?.branch || u} (${u})` : k === "dept" ? u : "Unassigned";
+const GROUPS = { store:["Store / department", placeOf], am:["Area manager", e => geo("area_manager", e)], rom:["ROM", e => geo("rom", e)], city:["City", e => geo("city", e)], region:["Region", e => geo("region", e)] };
 const hasMap = () => Object.keys(S.map).length > 0;
-const storeSub = e => { const m = mapOf(e); return m ? `<div class="sub">${esc(m.area_manager)}${m.city ? " · " + esc(m.city) : ""}</div>` : ""; };
+const storeSub = e => { const m = mapOf(e); return m ? `<div class="sub">${esc(e.unit || m.code)} · ${esc(m.area_manager)}${m.city ? " · " + esc(m.city) : ""}</div>` : isDept(e) ? `<div class="sub">Department</div>` : ""; };
 const findEmp = id => S.emps.find(x => x.id === id) || S.left.find(x => x.id === id);
 function cardStatusList(){
   const c = {}; for (const e of S.emps) if (e.card_status) c[e.card_status] = (c[e.card_status] || 0) + 1;
@@ -101,12 +110,13 @@ const ICON = {
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   key:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="16" height="16"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2"/></svg>',
   phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>',
   wa:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.6z"/><path d="M9 9.5c.3 2 2.2 4.1 4.5 4.8l1.2-1.2 1.8.9c-.3 1.2-1.3 1.9-2.4 1.8C10.8 15.4 8.5 13 8.2 10c-.1-1 .6-2 1.8-2.3l.9 1.8z"/></svg>',
 };
 const VIEWS = () => [
-  ["dashboard","Dashboard",ICON.dash],["employees","Employees",ICON.users],["import","Import",ICON.up],
+  ["dashboard","Dashboard",ICON.dash],["verify","Verify",ICON.check],["employees","Employees",ICON.users],
   ["alerts","Alerts",ICON.bell],["assistant","AI Assistant",ICON.spark],
-  ...(isAdmin() ? [["logins","Users",ICON.shield]] : [])
+  ...(isAdmin() ? [["import","Import",ICON.up],["logins","Users",ICON.shield]] : [])
 ];
 
 // ---------- auth ----------
@@ -153,7 +163,7 @@ document.addEventListener("visibilitychange", async () => {
     if (u?.user) {
       const { data: me, error: pe } = await sb.from("trackit_profiles").select("*").eq("id", u.user.id).maybeSingle();
       if (!pe && !me) { S.me = null; return show("noaccess"); }          // login was removed by the admin
-      if (me && me.role !== S.me.role) return location.reload();           // role changed (e.g. made admin)
+      if (me && (me.role !== S.me.role || me.scope_kind !== S.me.scope_kind || me.scope_value !== S.me.scope_value)) return location.reload();   // access changed
     }
     await loadAll(); render(true);
   } catch (e) { /* offline: the Live badge shows Reconnecting */ } finally { rechecking = false; }
@@ -177,7 +187,7 @@ async function bootInner(session){
   if (!me) return show("noaccess");
   S.me = me;
   $("#meName").textContent = me.full_name || me.email;
-  $("#meRole").textContent = isAdmin() ? "Admin" : "User";
+  $("#meRole").textContent = isAdmin() ? "Admin" : scopeKind() === "all" ? "User" : ({ store:"Store", dept:"Department", am:"Area manager" }[scopeKind()]);
   show("shell");
   await loadAll(); subscribe();
   go(location.hash.slice(1) || "dashboard");
@@ -206,7 +216,8 @@ async function loadAll(){
   const all = (await pageAll("trackit_staff", "expiry")).sort((a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : 1);
   S.emps = all.filter(e => !e.left_at);                 // active staff: every count, list, alert and email uses these
   S.left = all.filter(e => e.left_at).sort((a, b) => a.left_at < b.left_at ? 1 : -1);
-  const [mp, al, mm] = await Promise.all([sb.from("trackit_store_map").select("*").order("code"), sb.from("trackit_store_alias").select("store,code"), sb.from("trackit_map_meta").select("*").eq("id", 1).maybeSingle()]);
+  const [mp, al, mm, dp] = await Promise.all([sb.from("trackit_store_map").select("*").order("code"), sb.from("trackit_store_alias").select("store,code"), sb.from("trackit_map_meta").select("*").eq("id", 1).maybeSingle(), sb.from("trackit_departments").select("name").order("sort")]);
+  if (!dp.error && Array.isArray(dp.data)) S.depts = dp.data.map(d => d.name);
   if (!mp.error && Array.isArray(mp.data)) { S.map = {}; for (const m of mp.data) S.map[m.code] = m; }
   if (!al.error && Array.isArray(al.data)) { S.alias = {}; for (const x of al.data) S.alias[x.store] = x.code; }
   if (!mm.error) S.mapMeta = mm.data || null;
@@ -229,7 +240,7 @@ function subscribe(){
       if (!online) S.wasOffline = true;
     });
 }
-const stores = () => [...new Set(S.emps.map(e => e.store).filter(Boolean))].sort();
+const stores = () => [...new Set(S.emps.map(placeOf))].sort();
 
 // ---------- routing ----------
 function go(v){ if (!VIEWS().some(x => x[0] === v)) v = "dashboard"; S.view = v; S.page = 1; location.hash = v; render(); const m = $("#main"); if (m) m.scrollTop = 0; }
@@ -237,12 +248,12 @@ window.addEventListener("hashchange", () => { const v = location.hash.slice(1); 
 function renderNav(){
   $("#nav").innerHTML = VIEWS().map(([k,l,i]) => `<button class="${S.view===k?"on":""}" onclick="go('${k}')">${i}<span>${l}</span></button>`).join("");
   const short = { "AI Assistant":"Ask AI" };
-  $("#bnav").innerHTML = VIEWS().map(([k,l,i]) => `<button class="${S.view===k?"on":""}" onclick="go('${k}')">${i}<span>${short[l]||l}</span></button>`).join("");
+  $("#bnav").innerHTML = VIEWS().filter(([k]) => k !== "import").map(([k,l,i]) => `<button class="${S.view===k?"on":""}" onclick="go('${k}')">${i}<span>${short[l]||l}</span></button>`).join("");
 }
 function render(fromLive){
   renderNav();
   if (fromLive && (S.view === "assistant" || (S.view === "import" && S.imp))) return;
-  const f = { dashboard, employees, import: importView, alerts, assistant, logins: loginsView }[S.view];
+  const f = { dashboard, verify: verifyView, employees, import: importView, alerts, assistant, logins: loginsView }[S.view];
   const keepFocus = document.activeElement?.id;
   $("#main").innerHTML = f();
   if (S.view === "assistant") afterChat();
@@ -252,22 +263,23 @@ function render(fromLive){
 const header = (t, p, extra="") => `<div class="top"><div><h2>${t}</h2><p>${p}</p></div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="live" title="Updates appear automatically"><i></i><span class="on-txt">Live</span><span class="off-txt">Reconnecting…</span></span>${extra}</div></div>`;
 
 // ---------- dashboard ----------
-function counts(list){ const c = { exp:0, due:0, miss:0, ok:0, total:list.length }; for (const e of list) c[statusOf(e)]++; return c; }
+function counts(list){ const c = { unv:0, exp:0, due:0, miss:0, ok:0, total:list.length }; for (const e of list) c[statusOf(e)]++; return c; }
 function groupSwitch(){
-  if (!hasMap()) return groupTable("By store", "Store", groupRows(e => e.store), "store");
+  if (!hasMap()) return groupTable("By store / department", "Store / department", groupRows(placeOf), "store");
   const g = GROUPS[S.groupBy] || GROUPS.store;
   return `<div class="grp-seg" role="tablist" aria-label="Group by">${Object.entries(GROUPS).map(([k, [l]]) => `<button role="tab" class="${S.groupBy === k ? "on" : ""}" aria-selected="${S.groupBy === k}" onclick="S.groupBy='${k}';render()">${l}</button>`).join("")}</div>` +
     groupTable(`By ${g[0].toLowerCase()}`, g[0], groupRows(g[1]), S.groupBy);
 }
 function groupRows(keyFn){
   const g = {};
-  for (const e of S.emps) { const k = keyFn(e) || "—"; g[k] ??= { total:0, exp:0, due:0, miss:0, ok:0 }; g[k].total++; g[k][statusOf(e)]++; }
+  for (const e of S.emps) { const k = keyFn(e) || "—"; g[k] ??= { total:0, unv:0, exp:0, due:0, miss:0, ok:0 }; g[k].total++; g[k][statusOf(e)]++; }
   return Object.entries(g).sort((a,b) => (b[1].exp*1e6 + b[1].due*1e3 + b[1].miss) - (a[1].exp*1e6 + a[1].due*1e3 + a[1].miss));
 }
+const pctTxt = (n, t) => t ? `${n} <span class="sub" style="display:inline">${Math.round(n / t * 100)}%</span>` : "0";
 function groupTable(titleTxt, colName, rows, filterKey){
   if (!rows.length) return "";
-  return `<div class="card"><div class="pad" style="padding-bottom:6px"><h3>${titleTxt}</h3></div><div class="tbl-wrap"><table><thead><tr><th>${colName}</th><th>Staff</th><th>Expired</th><th>Due</th><th class="hm">No date</th></tr></thead><tbody>
-  ${rows.map(([k,v]) => `<tr style="cursor:pointer" onclick="openGroup('${filterKey}',this.dataset.k)" data-k="${esc(k === "—" ? "" : k)}"><td><b>${esc(k)}</b></td><td class="mono">${v.total}</td><td class="mono" style="color:${v.exp?"var(--red)":"var(--muted)"};font-weight:${v.exp?700:400}">${v.exp}</td><td class="mono" style="color:${v.due?"var(--amber)":"var(--muted)"};font-weight:${v.due?700:400}">${v.due}</td><td class="mono hm">${v.miss}</td></tr>`).join("")}
+  return `<div class="card"><div class="pad" style="padding-bottom:6px"><h3>${titleTxt}</h3></div><div class="tbl-wrap"><table><thead><tr><th>${colName}</th><th>Staff</th><th>Verified</th><th>Expired</th><th>Due</th><th class="hm">No date</th></tr></thead><tbody>
+  ${rows.map(([k,v]) => `<tr style="cursor:pointer" onclick="openGroup('${filterKey}',this.dataset.k)" data-k="${esc(k === "—" ? "" : k)}"><td><b>${esc(k)}</b></td><td class="mono">${v.total}</td><td class="mono">${pctTxt(v.total - v.unv, v.total)}</td><td class="mono" style="color:${v.exp?"var(--red)":"var(--muted)"};font-weight:${v.exp?700:400}">${v.exp}</td><td class="mono" style="color:${v.due?"var(--amber)":"var(--muted)"};font-weight:${v.due?700:400}">${v.due}</td><td class="mono hm">${v.miss}</td></tr>`).join("")}
   </tbody></table></div></div>`;
 }
 function openGroup(key, val){ S.filters = { q:"", store:"", status:"", cs:"", am:"", rom:"", city:"", region:"" }; S.filters[key] = val === "" ? "__none" : val; go("employees"); }
@@ -276,36 +288,146 @@ function dashboard(){
   const kpi = (st, lbl, v, sub, col) => `<div class="card kpi" onclick="quick('${st}')"><div class="l"><span class="dot" style="background:${col}"></span>${lbl}</div><div class="v mono" style="color:${col}">${v.toLocaleString()}</div><div class="s">${sub}</div></div>`;
   const next = S.emps.filter(e => ["exp","due"].includes(statusOf(e))).slice(0, 8);
   const csl = cardStatusList();
-  return header("Dashboard", `${c.total.toLocaleString()} employees · ${stores().length} stores${S.left.length ? ` · ${S.left.length} marked as left` : ""}`,
+  const nStores = new Set(S.emps.filter(e => e.unit_kind === "store").map(e => e.unit)).size, nDept = new Set(S.emps.filter(isDept).map(e => e.unit)).size;
+  const vDone = c.total - c.unv;
+  return header("Dashboard", `${scopeName() ? esc(scopeName()) + " · " : ""}${c.total.toLocaleString()} employees · ${nStores} stores${nDept ? ` · ${nDept} departments` : ""}${S.left.length ? ` · ${S.left.length} marked as left` : ""}`,
     S.emps.length ? `<button class="btn ghost" onclick="printReport()">PDF report</button>` : "") + `
+  ${c.total ? `<div class="card pad vprog-card" onclick="go('verify')" style="cursor:pointer"><div class="vprog-top"><b>Balady verification</b><span class="mono">${vDone.toLocaleString()} of ${c.total.toLocaleString()} verified</span></div>
+    <div class="vbar"><i style="width:${Math.round(vDone / c.total * 100)}%"></i></div><p class="note" style="margin:6px 0 0">${c.unv ? `${c.unv.toLocaleString()} still to check on the Balady website. Alerts only count verified people.` : "Everyone is verified. Alerts are based on confirmed dates."}</p></div>` : ""}
   <div class="kpis k5">
-    ${kpi("", "Total", c.total, "All employees", "var(--ink)")}
+    ${kpi("unv", "Not verified", c.unv, "Check on Balady", "#7A6F62")}
     ${kpi("exp", "Expired", c.exp, "Renew now", "var(--red)")}
-    ${kpi("due", "Due ≤ 30 days", c.due, "Book renewals", "var(--amber)")}
+    ${kpi("due", STATUS_LABEL.due, c.due, "Book renewals", "var(--amber)")}
     ${kpi("miss", "Date missing", c.miss, "Check Baladiya system", "#6E655B")}
-    ${kpi("ok", "OK", c.ok, "More than 30 days", "var(--teal-d)")}
+    ${kpi("ok", "OK", c.ok, `More than ${DUE_DAYS} days`, "var(--teal-d)")}
   </div>
   ${csl.length ? `<div class="card section"><div class="pad" style="padding-bottom:4px"><h3>Card status</h3><p class="note" style="margin:4px 0 0">Where people are in the renewal process. Tap one to see who.</p></div>
     <div class="cs-grid">${csl.map(([k, n]) => `<button class="cs-tile" onclick="openCs(this.dataset.k)" data-k="${esc(k)}"><b class="mono">${n}</b><span>${esc(k)}</span></button>`).join("")}</div></div>` : ""}
   ${groupSwitch()}
   <div class="card section"><div class="pad" style="padding-bottom:6px"><h3>Needs action soonest</h3></div>
     ${next.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">Card status / remarks</th></tr></thead><tbody>
-    ${next.map(e => `<tr onclick="editEmp('${e.id}')" style="cursor:pointer"><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${remarksCell(e)}</td></tr>`).join("")}
-    </tbody></table></div><div class="pager"><span>The 8 most overdue</span><button class="btn sm ghost" onclick="go('alerts')">See all alerts</button></div>` : `<div class="empty">${S.emps.length ? "Nothing expired or due in the next 30 days." : "No employees yet. Go to <a href='#import'>Import</a> to upload the weekly file."}</div>`}
+    ${next.map(e => `<tr onclick="editEmp('${e.id}')" style="cursor:pointer"><td><b>${esc(e.name)}</b><div class="sub mono">${esc(eid(e) || (e.iqama ? "ID …" + e.iqama.slice(-4) : ""))}<span class="sm-only"> · ${esc(placeOf(e))}</span></div></td><td class="hm">${esc(placeOf(e))}</td><td class="mono">${dateCell(e)}</td><td class="hm">${remarksCell(e)}</td></tr>`).join("")}
+    </tbody></table></div><div class="pager"><span>The 8 most overdue</span><button class="btn sm ghost" onclick="go('alerts')">See all alerts</button></div>` : `<div class="empty">${S.emps.length ? `Nothing verified is expired or due in the next ${DUE_DAYS} days.` : (isAdmin() ? "No employees yet. Go to <a href='#import'>Import</a> to upload the staff file." : "No employees in your list yet.")}</div>`}
   </div>`;
 }
 function openCs(k){ S.filters = { q:"", store:"", status:"", cs:k, am:"", rom:"", city:"", region:"" }; go("employees"); }
 function quick(st){ S.filters = { q:"", store:"", status:st, cs:"", am:"", rom:"", city:"", region:"" }; go("employees"); }
+
+// ---------- verify on Balady ----------
+function verifyView(){
+  const k = scopeKind(), wide = k === "all" || k === "am";
+  const all = S.emps, done = all.filter(e => e.verified_at).length;
+  const base = S.vUnit ? all.filter(e => placeOf(e) === S.vUnit) : all;
+  const ql = S.vq.trim().toLowerCase();
+  const match = e => !ql || e.name.toLowerCase().includes(ql) || eid(e).toLowerCase().includes(ql) || String(e.iqama).includes(ql) || String(e.job_role || "").toLowerCase().includes(ql);
+  const todo = base.filter(e => !e.verified_at && match(e)), ok = base.filter(e => e.verified_at && match(e)).sort((a, b) => a.verified_at < b.verified_at ? 1 : -1);
+  const list = S.vTab === "done" ? ok : todo, per = 30, pages = Math.max(1, Math.ceil(list.length / per));
+  S.page = Math.min(S.page, pages); const slice = list.slice((S.page - 1) * per, S.page * per);
+  const pct = all.length ? Math.round(done / all.length * 100) : 0;
+  const prog = wide && all.length ? groupRows(placeOf).map(([p, v]) => [p, v.total, v.total - v.unv]).sort((x, y) => (x[0] === "Unassigned" ? -1 : y[0] === "Unassigned" ? 1 : 0) || (x[2] / x[1]) - (y[2] / y[1]) || y[1] - x[1]) : [];
+  const nUn = all.filter(e => e.unit_kind === "unassigned").length;
+  return header("Verify on Balady", scopeName() ? esc(scopeName()) : "Check every person on the Balady website, then confirm", `<button class="btn ghost" onclick="findPerson()">Find a person</button>${k !== "am" ? `<button class="btn" onclick="editEmp()">+ Add</button>` : ""}`) + `
+  <div class="card pad"><div class="vprog-top"><b>${done.toLocaleString()} of ${all.length.toLocaleString()} verified</b><span class="mono">${pct}%</span></div><div class="vbar"><i style="width:${pct}%"></i></div>
+    <p class="note" style="margin:8px 0 0">Open each person on the Balady website, enter the expiry date it shows (Gregorian or Hijri) and press <b>Confirm</b>. Only confirmed people count in alerts${DUE_DAYS ? ` (warning ${DUE_DAYS} days before expiry)` : ""}.
+    ${k === "store" || k === "dept" ? ` Someone here who isn't on your list? Use <b>Find a person</b>. Someone on your list who doesn't work here? Press <b>Not here</b>.` : ""}</p></div>
+  ${wide && nUn ? `<div class="warnbox section" style="cursor:pointer" onclick="S.vUnit='Unassigned';S.page=1;render()"><b>${nUn.toLocaleString()} people have no store or department yet.</b> Their store can claim them with Find a person, or ${isAdmin() ? "you can" : "an admin can"} set it with Edit.</div>` : ""}
+  ${prog.length ? `<details class="card section map-sec" ${S.vUnit ? "" : "open"}><summary style="padding:14px 16px">Progress by store and department (${prog.length})</summary><div class="tbl-wrap"><table><thead><tr><th>Store / department</th><th>Staff</th><th>Verified</th><th class="hm">Left to check</th></tr></thead><tbody>
+    ${prog.map(([p, t, v]) => `<tr style="cursor:pointer" data-p="${esc(p)}" onclick="S.vUnit=this.dataset.p;S.vTab='todo';S.page=1;render()"><td><b>${esc(p)}</b></td><td class="mono">${t}</td><td><div class="vbar sm"><i style="width:${Math.round(v / t * 100)}%"></i></div><span class="sub">${v} · ${Math.round(v / t * 100)}%</span></td><td class="mono hm">${t - v}</td></tr>`).join("")}
+    </tbody></table></div></details>` : ""}
+  <div class="filters section">
+    <input id="vq" type="search" placeholder="Search name, Employee No., Iqama or job…" value="${esc(S.vq)}" oninput="S.vq=this.value;S.page=1;render()">
+    ${wide || stores().length > 1 ? `<select aria-label="Store or department" onchange="S.vUnit=this.value;S.page=1;render()"><option value="">All stores & departments</option>${stores().map(p => `<option value="${esc(p)}" ${S.vUnit === p ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>` : ""}
+  </div>
+  <div class="tabs">${[["todo", `To verify (${todo.length})`], ["done", `Verified (${ok.length})`]].map(([t, l]) => `<button class="${S.vTab === t ? "on" : ""}" onclick="S.vTab='${t}';S.page=1;render()">${l}</button>`).join("")}</div>
+  <div class="vlist">${slice.length ? slice.map(S.vTab === "done" ? vDoneRow : vRow).join("") : `<div class="card empty">${S.vTab === "done" ? "Nobody verified yet." : base.length ? "Everyone here is verified. 🎉" : "Nobody here yet."}</div>`}</div>
+  ${pages > 1 ? `<div class="pager card"><span>${list.length.toLocaleString()} people · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render();$('#main').scrollTop=0">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render();$('#main').scrollTop=0">Next</button></span></div>` : ""}`;
+}
+const whoLine = e => [eid(e) && `No. ${esc(eid(e))}`, e.job_role && esc(e.job_role), esc(placeOf(e))].filter(Boolean).join(" · ");
+function vRow(e){
+  const k = scopeKind();
+  return `<div class="card vrow" data-id="${e.id}">
+    <div class="vwho"><b>${esc(e.name)}</b><div class="sub">${whoLine(e)}</div>
+      ${e.iqama ? `<div class="vid"><span class="mono">${esc(e.iqama)}</span><button type="button" class="linkbtn" onclick="copyTxt('${esc(e.iqama)}')">Copy ID</button></div>` : `<div class="sub" style="color:var(--red)">No Iqama / ID number — add it with Edit</div>`}
+      <div class="sub">In the file: ${e.expiry ? `<b>${fmtDate(e.expiry)}</b>` : `<b>${esc(e.expiry_note || "no date")}</b>`}${e.card_status ? ` · ${esc(e.card_status)}` : ""}</div>
+      ${e.check_note ? `<div class="vcheck">${esc(e.check_note)}</div>` : ""}</div>
+    <div class="vform">
+      <div class="vin"><label>Expiry on Balady</label><input type="date" id="vd-${e.id}" value="${esc(e.expiry || "")}"></div>
+      <div class="vin"><label>or Hijri</label>${hijriBox(`vd-${e.id}`)}</div>
+      <label class="chk sm"><input type="checkbox" id="vn-${e.id}" onchange="if(this.checked)$('#vd-${e.id}').value=''"> Not on Balady / no card</label>
+      <div class="err" id="ve-${e.id}"></div>
+      <div class="vbtns"><button class="btn" onclick="vConfirm('${e.id}', this)">Confirm</button>
+        <button class="btn ghost sm" onclick="editEmp('${e.id}')">Edit</button>
+        ${k === "store" || k === "dept" || (isAdmin() && e.unit_kind !== "unassigned") ? `<button class="btn ghost sm danger-t" onclick="vRelease('${e.id}', this)">Not here</button>` : ""}</div>
+    </div></div>`;
+}
+const vDoneRow = e => `<div class="card vrow done"><div class="vwho"><b>${esc(e.name)}</b><div class="sub">${whoLine(e)}</div></div>
+  <div class="vres">${pill(e)}<div class="mono">${e.expiry ? fmtDate(e.expiry) : esc(e.expiry_note || "No card")}</div><div class="sub">by ${esc(e.verified_by_name || "—")} · ${fmtTS(e.verified_at)}</div>
+  <button class="btn ghost sm" onclick="editEmp('${e.id}')">Edit</button></div></div>`;
+function copyTxt(t){ try { navigator.clipboard.writeText(t).then(() => toast("ID copied — paste it on the Balady website"), () => toast(t)); } catch (e) { toast(t); } }
+async function vConfirm(id, btn){
+  const e = findEmp(id); if (!e || btn.disabled) return;
+  const d = $(`#vd-${id}`).value, none = $(`#vn-${id}`).checked, er = $(`#ve-${id}`); er.textContent = "";
+  if (!d && !none) { er.textContent = "Enter the expiry date from Balady, or tick “Not on Balady”."; return; }
+  if (d && (d < "2015-01-01" || d > "2040-12-31")) { er.textContent = "That date doesn't look right. Check the year."; return; }
+  btn.disabled = true; btn.textContent = "Saving…";
+  const row = { expiry: none ? null : d, expiry_note: none ? "Not on Balady" : "", verified_at: new Date().toISOString() };
+  let res; try { res = await sb.from("trackit_staff").update(row).eq("id", id).eq("updated_at", e.updated_at).select("id,updated_at"); } catch (err) { res = { error: { message: loginError(err) } }; }
+  if (res.error || !res.data?.length) { btn.disabled = false; btn.textContent = "Confirm"; er.textContent = res.error ? res.error.message : "Someone else just changed this person. Refresh the page and try again."; return; }
+  Object.assign(e, row, { updated_at: res.data[0].updated_at, verified_by_name: S.me.full_name || S.me.email });
+  const card = btn.closest(".vrow"); card.classList.add("gone"); toast(`${e.name.split(" ")[0]} verified`);
+  setTimeout(() => render(), 350);
+}
+async function vRelease(id, btn){
+  if (!btn.dataset.sure) { btn.dataset.sure = "1"; btn.textContent = "Tap again — remove from my list"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.sure; btn.textContent = "Not here"; } }, 4000); return; }
+  btn.disabled = true;
+  const { error } = await sb.rpc("trackit_move_staff", { p_id: id, p_kind: "unassigned", p_unit: "" });
+  if (error) { btn.disabled = false; return toast(error.message); }
+  toast("Moved to Unassigned — their real store can claim them"); await loadAll(); render();
+}
+// ---------- find a person and bring them to my store ----------
+function targets(){
+  const k = scopeKind();
+  if (k === "store" || k === "dept") return [[`${k}|${S.me.scope_value}`, placeLabel(k, S.me.scope_value)]];
+  if (k === "am") return Object.values(S.map).filter(m => m.area_manager === S.me.scope_value).sort((x, y) => x.branch.localeCompare(y.branch)).map(m => [`store|${m.code}`, `${m.branch} (${m.code})`]);
+  return [["unassigned|", "Unassigned"], ...S.depts.map(d => [`dept|${d}`, d]), ...Object.values(S.map).sort((x, y) => x.branch.localeCompare(y.branch)).map(m => [`store|${m.code}`, `${m.branch} (${m.code})`])];
+}
+function findPerson(){
+  const t = targets();
+  modal(`<h3>Find a person</h3><p class="note" style="margin-top:-6px">Search everyone in Trackit by name, Employee No. or full Iqama number, then move them to ${t.length === 1 ? `<b>${esc(t[0][1])}</b>` : "the right store"}.</p>
+    <input type="search" id="fpq" placeholder="At least 3 letters or the full Iqama" autocomplete="off" oninput="clearTimeout(S.fpT);S.fpT=setTimeout(fpSearch,350)">
+    ${t.length > 1 ? `<label>Move to</label><select id="fpTo">${t.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</select>` : ""}
+    <div id="fpOut" class="fp-out"></div>
+    <div class="actions"><button class="btn ghost" onclick="closeModal()">Close</button></div>`, true);
+  setTimeout(() => $("#fpq")?.focus(), 50);
+}
+async function fpSearch(){
+  const q = $("#fpq")?.value.trim(), out = $("#fpOut"); if (!out) return;
+  if (!q || q.length < 3) { out.innerHTML = ""; return; }
+  out.innerHTML = `<p class="note">Searching…</p>`;
+  const { data, error } = await sb.rpc("trackit_find_staff", { q });
+  if ($("#fpq")?.value.trim() !== q) return;
+  if (error) { out.innerHTML = `<div class="err">${esc(error.message)}</div>`; return; }
+  out.innerHTML = data.length ? data.map(p => `<div class="fp-row"><div><b>${esc(p.name)}</b><div class="sub">${[p.employee_id && "No. " + esc(p.employee_id), p.id_last4 && "ID …" + esc(p.id_last4), p.job_role && esc(p.job_role)].filter(Boolean).join(" · ")}</div><div class="sub">Now: <b>${esc(p.place)}</b></div></div>
+    <button class="btn sm" onclick="fpMove('${p.id}', this)">Move here</button></div>`).join("") : `<p class="note">Nobody found. Check the spelling, or add them with <b>+ Add</b>.</p>`;
+}
+async function fpMove(id, btn){
+  const v = ($("#fpTo")?.value) || targets()[0][0], [k, u] = v.split("|");
+  btn.disabled = true; btn.textContent = "Moving…";
+  const { data, error } = await sb.rpc("trackit_move_staff", { p_id: id, p_kind: k, p_unit: u || "" });
+  if (error) { btn.disabled = false; btn.textContent = "Move here"; return toast(error.message === "Not allowed" ? "You can't move this person there" : error.message); }
+  btn.textContent = data === "unchanged" ? "Already here" : "Moved ✓"; toast(data === "unchanged" ? "Already there" : `Moved to ${placeLabel(k, u)} — verify them now`);
+  await loadAll(); if (S.view === "verify" || S.view === "employees") render();
+}
 
 // ---------- employees ----------
 function filtered(){
   const { q, store, status, cs, am, rom, city, region } = S.filters; const ql = q.trim().toLowerCase();
   const mf = (v, want) => !want || (want === "__none" ? !v : v === want);
   const base = status === "left" ? S.left : S.emps;
-  return base.filter(e => (!ql || e.name.toLowerCase().includes(ql) || e.employee_id.toLowerCase().includes(ql) || String(e.iqama).includes(ql) || String(e.mobile).includes(ql)) &&
-    (!store || e.store === store) && (!status || status === "left" || statusOf(e) === status) &&
+  return base.filter(e => (!ql || e.name.toLowerCase().includes(ql) || eid(e).toLowerCase().includes(ql) || String(e.job_role || "").toLowerCase().includes(ql) || String(e.iqama).includes(ql) || String(e.mobile).includes(ql)) &&
+    (!store || placeOf(e) === store) && (!status || status === "left" || statusOf(e) === status) &&
     (!cs || (cs === "__none" ? !e.card_status : e.card_status === cs)) &&
-    (!(am || rom || city || region) || (m => mf(m?.area_manager, am) && mf(m?.rom, rom) && mf(m?.city, city) && mf(m?.region, region))(mapOf(e)))).sort(sorter());
+    mf(GROUPS.am[1](e), am) && mf(GROUPS.rom[1](e), rom) && mf(GROUPS.city[1](e), city) && mf(GROUPS.region[1](e), region)).sort(sorter());
 }
 function sorter(){
   const k = S.sortBy;
@@ -316,53 +438,91 @@ function sorter(){
 }
 function filterBar(){
   const f = S.filters;
-  const sts = [...new Set(S.emps.map(e => e.store).filter(Boolean))].sort();
+  const sts = stores();
   const sel = (key, all, opts) => `<select aria-label="${all}" onchange="S.filters.${key}=this.value;S.page=1;render()"><option value="">${all}</option>${opts.map(([v,l]) => `<option value="${esc(v)}" ${f[key]===v?"selected":""}>${esc(l)}</option>`).join("")}</select>`;
   const vals = k => { const s = new Set(); let none = false; for (const e of S.emps) { const v = GROUPS[k][1](e); if (v) s.add(v); else none = true; } return [...[...s].sort().map(v => [v, v]), ...(none ? [["__none", "Not mapped"]] : [])]; };
   return `<div class="filters">
     <input id="fq" type="search" placeholder="Search name, ID, Iqama or mobile…" value="${esc(f.q)}" oninput="S.filters.q=this.value;S.page=1;render()">
-    ${sel("store", "All stores", sts.map(s => [s, s]))}
+    ${sts.length > 1 ? sel("store", "All stores & departments", sts.map(s => [s, s])) : ""}
     ${sel("status", "All statuses", [...Object.entries(STATUS_LABEL), ...(S.left.length ? [["left", `Left the company (${S.left.length})`]] : [])])}
     ${sel("cs", "All card statuses", [...new Set([...CARD_STATUSES, ...cardStatusList().map(x => x[0])])].map(s => [s, s]).concat([["__none", "No card status"]]))}
     ${hasMap() ? `<button type="button" class="btn sm ghost more-f-btn" onclick="S.moreF=!S.moreF;render()">${S.moreF ? "Fewer filters" : `More filters${["region","city","am","rom"].some(k => f[k]) || S.sortBy !== "expiry" ? " •" : ""}`}</button>
     <span class="xf ${S.moreF ? "open" : ""}">${sel("region", "All regions", vals("region"))}${sel("city", "All cities", vals("city"))}${sel("am", "All area managers", vals("am"))}${sel("rom", "All ROMs", vals("rom"))}
-    <select aria-label="Sort by" onchange="S.sortBy=this.value;S.page=1;render()">${[["expiry","Sort: expiry date"],["name","Sort: name"],["store","Sort: store"],["am","Sort: area manager"],["rom","Sort: ROM"],["city","Sort: city"],["region","Sort: region"]].map(([v,l]) => `<option value="${v}" ${S.sortBy===v?"selected":""}>${l}</option>`).join("")}</select></span>` : ""}
+    <select aria-label="Sort by" onchange="S.sortBy=this.value;S.page=1;render()">${[["expiry","Sort: expiry date"],["name","Sort: name"],["store","Sort: store / department"],["am","Sort: area manager"],["rom","Sort: ROM"],["city","Sort: city"],["region","Sort: region"]].map(([v,l]) => `<option value="${v}" ${S.sortBy===v?"selected":""}>${l}</option>`).join("")}</select></span>` : ""}
     ${Object.entries(f).some(([k, v]) => v && k !== "q") ? `<button class="btn sm ghost" onclick="S.filters={q:S.filters.q,store:'',status:'',cs:'',am:'',rom:'',city:'',region:''};S.page=1;render()">Clear filters</button>` : ""}
   </div>`;
 }
 function employees(){
   const list = filtered(); const per = 50; const pages = Math.max(1, Math.ceil(list.length / per));
   S.page = Math.min(S.page, pages); const slice = list.slice((S.page-1)*per, S.page*per);
-  return header("Employees", "Search, filter and update expiry dates", `<button class="btn ghost" onclick="exportCSV()">Export list</button><button class="btn" onclick="editEmp()">+ Add employee</button>`) + filterBar() + `
+  return header("Employees", scopeName() ? esc(scopeName()) : "Search, filter and update expiry dates", `<button class="btn ghost" onclick="exportCSV()">Export list</button><button class="btn" onclick="editEmp()">+ Add employee</button>`) + filterBar() + `
   <div class="card">${slice.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th class="hm">Nationality</th><th>Baladiya expiry</th><th class="hm">Status</th><th class="hm">Card status / remarks</th><th></th></tr></thead><tbody>
-    ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div>${e.left_at || e.card_status ? `<div class="sm-only-b">${e.left_at ? pill(e) + " " : ""}${csChip(e)}</div>` : ""}</td><td class="hm">${esc(e.store)}${storeSub(e)}</td><td class="hm">${esc(e.nationality)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${pill(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td>
+    ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(eid(e) || (e.iqama ? "ID …" + e.iqama.slice(-4) : ""))}<span class="sm-only"> · ${esc(placeOf(e))}</span></div>${e.left_at || e.card_status ? `<div class="sm-only-b">${e.left_at ? pill(e) + " " : ""}${csChip(e)}</div>` : ""}</td><td class="hm">${esc(placeOf(e))}${storeSub(e)}</td><td class="hm">${esc(e.nationality)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${pill(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td>
     <td style="white-space:nowrap;text-align:right">${contact(e)}<button class="icon-btn" title="Edit" aria-label="Edit" onclick="editEmp('${e.id}')" style="display:inline-block">${ICON.edit}</button>${isAdmin() ? `<button class="icon-btn hm" title="Delete" aria-label="Delete" onclick="delEmp('${e.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
   </tbody></table></div>
   <div class="pager"><span>${list.length.toLocaleString()} employee${list.length===1?"":"s"} · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>`
   : `<div class="empty">${S.emps.length ? "No employees match these filters." : "No employees yet. Use <a href='#import'>Import</a> to upload this week's file."}</div>`}</div>`;
 }
+// ---------- Hijri (Umm al-Qura) → Gregorian ----------
+const HFMT = (() => { try { return new Intl.DateTimeFormat("en-u-ca-islamic-umalqura-nu-latn", { timeZone:"UTC", year:"numeric", month:"numeric", day:"numeric" }); } catch (e) { return null; } })();
+function hijriOf(ms){ const p = {}; for (const x of HFMT.formatToParts(new Date(ms))) p[x.type] = x.value; return [parseInt(p.year, 10), +p.month, +p.day]; }
+function hijriToG(txt){
+  const m = String(txt || "").trim().replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).match(/^(\d{1,4})\D+(\d{1,2})\D+(\d{1,4})$/);
+  if (!m || !HFMT) return "";
+  const a = +m[1], b = +m[2], c = +m[3]; let y, mo, d;
+  if (a > 1000) [y, mo, d] = [a, b, c]; else if (c > 1000) [y, mo, d] = [c, b, a]; else return "";
+  if (y < 1400 || y > 1500 || mo < 1 || mo > 12 || d < 1 || d > 30) return "";
+  const approx = Date.UTC(622, 6, 19) + ((y - 1) * 354.36707 + (mo - 1) * 29.530589 + (d - 1)) * 86400000;
+  for (let k = -25; k <= 25; k++) { const t = approx + k * 86400000, [hy, hm, hd] = hijriOf(t); if (hy === y && hm === mo && hd === d) return new Date(t).toISOString().slice(0, 10); }
+  return "";
+}
+// typing a Hijri date fills the normal date box next to it
+function hijriInput(inp, dateId){
+  const out = inp.parentElement.querySelector(".hj-out"), v = inp.value.trim(), g = v ? hijriToG(v) : "";
+  if (!v) { out.textContent = ""; return; }
+  if (g) { const di = document.getElementById(dateId); if (di) { di.value = g; di.dispatchEvent(new Event("change", { bubbles: true })); } out.textContent = "= " + fmtDate(g); out.className = "hj-out ok"; }
+  else { out.textContent = HFMT ? "Type it like 1447-09-15 or 15/09/1447" : "This browser can't convert Hijri dates"; out.className = "hj-out bad"; }
+}
+const hijriBox = (dateId, id) => `<span class="hj"><input type="text" ${id ? `id="${id}"` : ""} class="in-sm" inputmode="numeric" placeholder="Hijri, e.g. 1447-09-15" aria-label="Hijri date" oninput="hijriInput(this,'${dateId}')"><span class="hj-out"></span></span>`;
+
+// ---------- workplaces ----------
+function placeOptions(curKind, curUnit){
+  const sel = (k, u) => k === curKind && u === (curUnit || "") ? "selected" : "";
+  const br = Object.values(S.map).sort((x, y) => x.branch.localeCompare(y.branch));
+  return `<option value="unassigned|" ${sel("unassigned", "")}>Unassigned</option>
+    ${S.depts.length ? `<optgroup label="Departments">${S.depts.map(d => `<option value="dept|${esc(d)}" ${sel("dept", d)}>${esc(d)}</option>`).join("")}</optgroup>` : ""}
+    <optgroup label="Stores">${br.map(b => `<option value="store|${esc(b.code)}" ${sel("store", b.code)}>${esc(b.branch)} (${esc(b.code)})</option>`).join("")}</optgroup>`;
+}
+const myPlace = () => { const k = scopeKind(); return k === "store" || k === "dept" ? [k, S.me.scope_value] : ["unassigned", ""]; };
+
 function editEmp(id){
-  const e = id ? findEmp(id) : { employee_id:"", name:"", store:"", iqama:"", nationality:"", mobile:"", expiry:"", expiry_note:"", remarks:"", card_status:"", card_photo:"" };
+  const [dk, du] = myPlace();
+  const e = id ? findEmp(id) : { employee_id:"", name:"", store:"", iqama:"", nationality:"", mobile:"", expiry:"", expiry_note:"", remarks:"", card_status:"", card_photo:"", unit_kind:dk, unit:du, job_role:"", file_note:"", check_note:"", verified_at:null };
   if (!e) return toast("This employee is no longer in Trackit.");
   const opts = (list, cur) => [...new Set([...list, cur].filter(Boolean))].map(n => `<option ${n===cur?"selected":""}>${esc(n)}</option>`).join("");
   const cs = e.card_status || "", known = !cs || CARD_STATUSES.includes(cs);
   modal(`<h3>${id ? esc(e.name) : "Add employee"}</h3>${id ? `<p class="note" style="margin-top:-8px">${pill(e)} ${e.left_at ? "" : contact(e)}</p>` : ""}
     ${e.left_at ? `<div class="warnbox">Marked as left on ${fmtTS(e.left_at)}. Not counted anywhere until you bring them back.</div>` : ""}
+    ${e.check_note || e.file_note ? `<div class="file-notes">${e.check_note ? `<div><b>Check:</b> ${esc(e.check_note)}</div>` : ""}${e.file_note ? `<div><b>From the Balady file:</b> ${esc(e.file_note)}</div>` : ""}</div>` : ""}
     <form id="ef">
-      <div class="row2"><div><label>Expiry date</label><input type="date" name="expiry" value="${esc(e.expiry || "")}"></div>
-      <div><label>AM remarks</label><input type="text" name="remarks" value="${esc(e.remarks)}" placeholder="e.g. medical booked for Sunday"></div></div>
+      <div class="row2"><div><label>Expiry date (from Balady)</label><input type="date" id="efDate" name="expiry" value="${esc(e.expiry || "")}"></div>
+      <div><label>…or type the Hijri date</label>${hijriBox("efDate")}</div></div>
+      <label class="chk"><input type="checkbox" name="verified" ${e.verified_at ? "checked" : ""}> I checked this on the Balady website${e.verified_at ? ` <span class="sub">— verified by ${esc(e.verified_by_name || "someone")} · ${fmtTS(e.verified_at)}</span>` : ""}</label>
       <div class="row2"><div><label>Card status</label>
         <select name="card_status_sel" id="csSel" onchange="$('#csCustomWrap').classList.toggle('hidden', this.value !== '__custom'); if (this.value === '__custom') $('#csCustom').focus()">
           <option value="">—</option>${CARD_STATUSES.map(s => `<option value="${esc(s)}" ${s === cs ? "selected" : ""}>${esc(s)}</option>`).join("")}
           <option value="__custom" ${known ? "" : "selected"}>Custom…</option></select></div>
         <div id="csCustomWrap" class="${known ? "hidden" : ""}"><label>Custom status</label><input type="text" id="csCustom" name="card_status_custom" maxlength="120" value="${known ? "" : esc(cs)}" placeholder="Type the card status"></div></div>
+      <label>Remarks</label><input type="text" name="remarks" value="${esc(e.remarks)}" placeholder="e.g. medical booked for Sunday">
       ${!e.expiry && e.expiry_note ? `<p class="note">File said: <b>${esc(e.expiry_note)}</b>. Enter the real date when you have it.</p>` : ""}
       ${id ? `<label>Card photo</label><div id="photoArea">${photoArea(e)}</div>` : ""}
-      <div class="row2"><div><label>Employee ID</label><input type="text" name="employee_id" required value="${esc(e.employee_id)}"></div>
-      <div><label>Name</label><input type="text" name="name" required value="${esc(e.name)}"></div></div>
-      <div class="row2"><div><label>Store</label><input type="text" name="store" list="storeList" required value="${esc(e.store)}"><datalist id="storeList">${stores().map(s => `<option value="${esc(s)}">`).join("")}</datalist></div>
+      <label>Works at</label><select name="place">${placeOptions(e.unit_kind || "unassigned", e.unit)}</select>
+      ${id ? `<p class="note" style="margin-top:4px">Changing this moves the person to that store or department. They'll need to be verified again there.</p>` : ""}
+      <div class="row2"><div><label>Name</label><input type="text" name="name" required value="${esc(e.name)}"></div>
+      <div><label>Job role</label><input type="text" name="job_role" value="${esc(e.job_role)}"></div></div>
+      <div class="row2"><div><label>Employee No. <span class="sub">(optional)</span></label><input type="text" name="employee_id" value="${esc(eid(e))}"></div>
       <div><label>Nationality</label><select name="nationality"><option value="">—</option>${opts(NATIONALITIES, e.nationality)}</select></div></div>
-      <div class="row2"><div><label>Iqama number</label><input type="text" name="iqama" inputmode="numeric" value="${esc(e.iqama)}"></div>
+      <div class="row2"><div><label>Iqama / National ID</label><input type="text" name="iqama" inputmode="numeric" value="${esc(e.iqama)}"></div>
       <div><label>Mobile number</label><input type="text" name="mobile" inputmode="tel" value="${esc(e.mobile)}" placeholder="5XXXXXXXX"></div></div>
       <div class="err" id="eerr"></div>
       <div class="actions split">
@@ -374,12 +534,18 @@ function editEmp(id){
     </form>`, true);
   $("#ef").onsubmit = async ev => {
     ev.preventDefault(); const fd = Object.fromEntries(new FormData(ev.target));
-    const row = { employee_id: fd.employee_id.trim(), name: fd.name.trim(), store: fd.store.trim(), iqama: fd.iqama.trim(), nationality: fd.nationality,
-      mobile: fd.mobile.replace(/\D/g,""), expiry: fd.expiry || null, remarks: fd.remarks.trim(),
+    const [pk, pu] = String(fd.place || "unassigned|").split("|");
+    const row = { employee_id: fd.employee_id.trim() || null, name: fd.name.trim().replace(/\s+/g, " "), iqama: fd.iqama.replace(/\D/g, ""), nationality: fd.nationality,
+      job_role: fd.job_role.trim(), mobile: fd.mobile.replace(/\D/g,""), expiry: fd.expiry || null, remarks: fd.remarks.trim(),
       card_status: fd.card_status_sel === "__custom" ? (fd.card_status_custom || "").trim() : (fd.card_status_sel || "") };
     if (fd.card_status_sel === "__custom" && !row.card_status) { $("#eerr").textContent = "Type the custom card status, or pick one from the list."; return; }
     if (row.expiry) row.expiry_note = "";
-    if (!row.employee_id || !row.name || !row.store) { $("#eerr").textContent = "Employee ID, name and store can't be empty."; return; }
+    if (!row.name) { $("#eerr").textContent = "Name can't be empty."; return; }
+    const ver = !!fd.verified;
+    if (ver && (!e.verified_at || row.expiry !== (e.expiry || null))) row.verified_at = new Date().toISOString();
+    if (!ver && e.verified_at) row.verified_at = null;
+    const moving = id && (pk !== (e.unit_kind || "unassigned") || (pu || "") !== (e.unit || ""));
+    if (!id) Object.assign(row, { unit_kind: pk, unit: pu || "", store: pk === "store" ? (S.map[pu]?.branch || pu) : pk === "dept" ? pu : "" });
     const btn = ev.submitter || $("#ef .actions .btn:not(.ghost)"); if (btn.disabled) return;
     btn.disabled = true; const label = btn.textContent; btn.textContent = "Saving…";
     let res;
@@ -388,11 +554,12 @@ function editEmp(id){
       res = id ? await (e.updated_at ? sb.from("trackit_staff").update(row).eq("id", id).eq("updated_at", e.updated_at).select("id") : sb.from("trackit_staff").update(row).eq("id", id))
                : await sb.from("trackit_staff").insert(row);
     } catch (err) { res = { error: { message: loginError(err) } }; }
+    let { error, data } = res || {};
+    if (!error && id && Array.isArray(data) && data.length === 0) { btn.disabled = false; btn.textContent = label; $("#eerr").innerHTML = `Someone else just changed this person. <button type="button" class="linkbtn" onclick="closeModal();loadAll().then(()=>{render();editEmp('${e.id}')})">Open the latest version</button> and make your change again.`; return; }
+    if (!error && moving) ({ error } = await sb.rpc("trackit_move_staff", { p_id: id, p_kind: pk, p_unit: pu || "" }));
     btn.disabled = false; btn.textContent = label;
-    const { error, data } = res || {};
-    if (error) { $("#eerr").textContent = error.code === "23505" ? "That Employee ID is already in Trackit." : /JWT|token/i.test(error.message) ? "Your login has expired. Sign in again." : error.message; return; }
-    if (id && Array.isArray(data) && data.length === 0) { $("#eerr").innerHTML = `Someone else just changed this person. <button type="button" class="linkbtn" onclick="closeModal();loadAll().then(()=>{render();editEmp('${e.id}')})">Open the latest version</button> and make your change again.`; return; }
-    closeModal(); toast(id ? "Saved" : "Employee added"); await loadAll(); render();
+    if (error) { $("#eerr").textContent = error.code === "23505" ? "That Employee No. or Iqama is already in Trackit — use Find a person on the Verify page to move them to you." : error.code === "42501" || /row-level security/i.test(error.message) ? "You can only add people to your own store or department." : /JWT|token/i.test(error.message) ? "Your login has expired. Sign in again." : error.message; return; }
+    closeModal(); toast(moving ? `Moved to ${placeLabel(pk, pu)}` : id ? "Saved" : "Employee added"); await loadAll(); render();
   };
 }
 const fmtTS = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" }); };
@@ -431,7 +598,7 @@ async function uploadPhoto(id, input){
   const area = $("#photoArea"); area.innerHTML = `<p class="note">Uploading photo…</p>`;
   try {
     const blob = await shrinkImage(file);
-    const path = `${String(e.employee_id).replace(/[^\w-]/g, "_")}/${Date.now()}.jpg`;
+    const path = `${e.id}/${Date.now()}.jpg`;
     const up = await sb.storage.from("trackit-cards").upload(path, blob, { contentType: "image/jpeg", upsert: false });
     if (up.error) throw up.error;
     const old = e.card_photo;
@@ -475,12 +642,12 @@ async function loadHistory(id, btn){
 }
 function delEmp(id){
   const e = findEmp(id);
-  modal(`<h3>Delete ${esc(e.name)}?</h3><p class="note">This removes employee ${esc(e.employee_id)} and their history from Trackit. It can't be undone. If they left the company, use <b>Mark as left</b> instead — it keeps their record.</p>
+  modal(`<h3>Delete ${esc(e.name)}?</h3><p class="note">This removes ${esc(e.name)}${eid(e) ? ` (${esc(eid(e))})` : ""} and their history from Trackit. It can't be undone. If they left the company, use <b>Mark as left</b> instead — it keeps their record.</p>
   <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" id="dbtn">Delete</button></div>`);
   $("#dbtn").onclick = async () => { const { error } = await sb.from("trackit_staff").delete().eq("id", id); if (error) return toast(error.message); closeModal(); toast("Deleted"); await loadAll(); render(); };
 }
-const empRow = e => [e.employee_id, e.name, e.store, e.iqama, e.nationality, e.expiry || "", e.mobile, e.remarks];
-function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Status", "Card status", "Area manager", "ROM", "City", "Region"], ...filtered().map(e => { const m = mapOf(e) || {}; return [...empRow(e), e.left_at ? "Left" : STATUS_LABEL[statusOf(e)], e.card_status || "", m.area_manager || "", m.rom || "", m.city || "", m.region || ""]; })]); }
+const empRow = e => [eid(e), e.name, e.iqama, e.nationality, e.mobile, e.job_role || "", e.unit_kind === "store" ? e.unit : e.unit_kind === "dept" ? e.unit : "Unassigned", e.expiry || "", e.card_status || "", e.file_note || "", e.check_note || ""];
+function exportCSV(){ downloadCSV(`trackit-export-${new Date().toISOString().slice(0,10)}.csv`, [[...COLS, "Workplace name", "Status", "Verified by", "Verified on", "AM remarks", "Area manager", "ROM", "City", "Region"], ...filtered().map(e => [...empRow(e), placeOf(e), e.left_at ? "Left" : STATUS_LABEL[statusOf(e)], e.verified_by_name || "", e.verified_at ? e.verified_at.slice(0, 10) : "", e.remarks || "", ...["area_manager", "rom", "city", "region"].map(k => geo(k, e) || "")])]); }
 function downloadCSV(name, rows){
   const csv = "﻿" + rows.map(r => r.map(v => { v = String(v ?? ""); if (/^[=+\-@\t\r]/.test(v) && !/^-?\d/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(",")).join("\r\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -489,10 +656,14 @@ function downloadCSV(name, rows){
 // ---------- import: reading files ----------
 const normHead = h => String(h||"").toLowerCase().replace(/\s+/g," ").trim();
 const HEAD = {
-  employee_id: ["employee id","employee number","employee no","emp no","emp id","staff id"],
+  employee_id: ["employee id","employee number","employee no","employee no.","emp no","emp id","staff id"],
   name: ["name","employee name","full name"],
-  store: ["store","branch","store name","branch name"],
-  iqama: ["iqama number","iqama","iqama no"],
+  store: ["store / department","store","branch","store name","branch name","department","workplace"],
+  iqama: ["iqama / national id","iqama number","iqama","iqama no","national id","id number"],
+  job_role: ["job role","job title","position"],
+  card_status: ["card status"],
+  file_note: ["notes","note"],
+  check_note: ["check needed"],
   nationality: ["nationality"],
   expiry: ["expiry date","expire date","expired date","expiration date","expiry","expire"],
   mobile: ["mobile number","phone number","mobile","phone","mobile no"],
@@ -535,7 +706,7 @@ async function readWorkbook(file){
   const rows = []; const sheets = [];
   for (const name of wb.SheetNames) {
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, defval:"", raw:true });
-    let h = -1; for (let i = 0; i < Math.min(aoa.length, 8); i++) { const t = aoa[i].map(normHead); if (t.some(x => HEAD.employee_id.includes(x)) && t.some(x => HEAD.store.includes(x))) { h = i; break; } }
+    let h = -1; for (let i = 0; i < Math.min(aoa.length, 8); i++) { const t = aoa[i].map(normHead); if (t.some(x => HEAD.name.includes(x)) && t.some(x => HEAD.employee_id.includes(x) || HEAD.iqama.includes(x))) { h = i; break; } }
     if (h < 0) { sheets.push({ name, rows:0, skipped:true }); continue; }
     const idx = colIndex(aoa[h].map(normHead));
     let n = 0;
@@ -546,17 +717,23 @@ async function readWorkbook(file){
       if (!eid && !nm) return;
       if (nm === "Example Name" && /delete this example/i.test(String(get("remarks")))) return;
       const d = readDate(get("expiry"));
-      rows.push({ where: `${name.trim()} row ${h + i + 2}`, employee_id: eid, name: nm.replace(/\s+/g," "), store: String(get("store")).replace(/\s+/g," ").trim(),
-        iqama: String(get("iqama")).trim().replace(/\.0$/, ""), nationality: normNationality(get("nationality")),
-        mobile: normMobile(get("mobile")), expiry: d.date, expiry_note: d.note, unclear: d.unclear, remarks: String(get("remarks") ?? "").replace(/\s+/g," ").trim() });
+      const txt = k => String(get(k) ?? "").replace(/\s+/g," ").trim();
+      rows.push({ where: `${name.trim()} row ${h + i + 2}`, employee_id: eid, name: nm.replace(/\s+/g," "), store: txt("store"),
+        iqama: String(get("iqama")).replace(/\.0$/, "").replace(/\D/g, ""), nationality: normNationality(get("nationality")),
+        mobile: normMobile(get("mobile")), expiry: d.date, expiry_note: d.note, unclear: d.unclear, remarks: txt("remarks"),
+        job_role: txt("job_role"), card_status: txt("card_status"), file_note: txt("file_note"), check_note: txt("check_note") });
       n++;
     });
     sheets.push({ name, rows:n });
   }
   return { rows, sheets };
 }
+const rowKey = r => r.iqama ? "iq:" + r.iqama : r.employee_id ? "no:" + r.employee_id : "nm:" + r.name.toUpperCase();
+// a workplace in the file: store code, department or branch name (blank = Unassigned)
+function knownPlace(p){ const u = String(p || "").trim().toUpperCase(); if (!u || u === "UNASSIGNED") return true;
+  return !!S.map[u] || S.depts.some(d => d.toUpperCase() === u) || Object.values(S.map).some(m => m.branch.toUpperCase() === u); }
 function analyse(rows){
-  const byId = {}; rows.forEach((r, i) => { (byId[r.employee_id] ??= []).push(i); });
+  const byId = {}; rows.forEach((r, i) => { (byId[rowKey(r)] ??= []).push(i); });
   const exactDup = [], conflicts = [];
   for (const [id, ix] of Object.entries(byId)) {
     if (!id || ix.length < 2) continue;
@@ -569,12 +746,12 @@ function analyse(rows){
 function importView(){
   needXLSX().catch(() => {});
   if (S.imp) return S.imp.result ? importResult() : importPreview();
-  return header("Import", "Upload the weekly Baladiya file") + `
+  return header("Import", "Upload the staff list (admins only)") + `
   <div class="steps">
-    <div class="card pad"><div class="step-n">1</div><h3>Use the Trackit template</h3>
-      <p class="note">One sheet, one row per employee, these columns: <b>${COLS.join(", ")}</b>.</p>
-      <p class="note">Rows are matched by <b>Employee ID</b> — new people are added and changes are updated. Nobody is removed automatically: after saving, Trackit shows anyone missing from the file so you can mark them as left.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn tan" href="trackit-template.xlsx" download>Download template</a>
+    <div class="card pad"><div class="step-n">1</div><h3>The staff file</h3>
+      <p class="note">One row per person, with these columns: <b>${COLS.join(", ")}</b>. <b>Store / Department</b> is a store code (like B48), a department name, or blank for Unassigned.</p>
+      <p class="note">People are matched by <b>Iqama / National ID</b>, then Employee No. New people are added; existing people get new details. A date a store has already <b>verified</b> is never overwritten, and people the app has already placed in a store keep their store.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn tan" onclick="downloadTemplate(false)">Download template</button>
       ${S.emps.length ? `<button class="btn ghost" onclick="downloadTemplate(true)">Download current list</button>` : ""}</div>
     </div>
     <div class="card pad"><div class="step-n">2</div><h3>Upload</h3>
@@ -605,10 +782,10 @@ function wipeAll(){
 }
 async function downloadTemplate(withData){
   try { await needXLSX(); } catch (e) { return toast(e.message); }
-  const data = withData ? S.emps.map(e => { const r = empRow(e); r[5] = e.expiry ? new Date(e.expiry + "T00:00:00") : ""; return r; }) : [];
+  const data = withData ? S.emps.map(e => { const r = empRow(e); r[7] = e.expiry ? new Date(e.expiry + "T00:00:00") : ""; return r; }) : [];
   const ws = XLSX.utils.aoa_to_sheet([COLS, ...data], { cellDates:true });
-  ws["!cols"] = [16,30,26,16,14,14,16,40].map(w => ({ wch:w }));
-  for (let i = 1; i <= data.length; i++) { const c = ws[XLSX.utils.encode_cell({ r:i, c:5 })]; if (c && c.t === "d") c.z = "dd-mmm-yyyy"; }
+  ws["!cols"] = [14,30,18,14,14,22,22,14,26,30,30].map(w => ({ wch:w }));
+  for (let i = 1; i <= data.length; i++) { const c = ws[XLSX.utils.encode_cell({ r:i, c:7 })]; if (c && c.t === "d") c.z = "dd-mmm-yyyy"; }
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Employees");
   XLSX.writeFile(wb, withData ? `trackit-current-list-${new Date().toISOString().slice(0,10)}.xlsx` : "trackit-template.xlsx");
 }
@@ -623,7 +800,7 @@ async function handleFile(file){
   $("#impOut").innerHTML = `<p class="note" style="margin-top:14px">Reading ${esc(file.name)}…</p>`;
   try {
     const { rows, sheets } = await readWorkbook(file);
-    if (!rows.length) throw new Error("No employee rows found. The sheet needs headings like Employee ID, Name and Store — use the Trackit template.");
+    if (!rows.length) throw new Error("No employee rows found. The sheet needs headings like Name, Iqama / National ID and Store / Department — use the template.");
     S.imp = { file: file.name, rows, sheets, ...analyse(rows), result: null };
     render();
   } catch (e) { $("#impOut").innerHTML = `<div class="errlist" style="margin-top:14px">${esc(e.message || e)}</div>`; $("#file").value = ""; }
@@ -631,55 +808,58 @@ async function handleFile(file){
 function importPreview(){
   const I = S.imp;
   const unclear = I.rows.filter(r => r.unclear), missing = I.rows.filter(r => !r.expiry && !r.unclear).length;
-  const noStore = I.rows.filter(r => !r.store);
+  const noStore = I.rows.filter(r => !r.store), badPlace = I.rows.filter(r => r.store && !knownPlace(r.store)), noId = I.rows.filter(r => !r.iqama && !r.employee_id);
   const listRows = (rows, cell) => `<div class="tbl-wrap section"><table><thead><tr><th>Where</th><th>Employee</th><th>File says</th></tr></thead><tbody>${rows.slice(0,100).map(r => `<tr><td>${esc(r.where)}</td><td>${esc(r.name)}</td><td>${esc(cell(r))}</td></tr>`).join("")}</tbody></table></div>`;
-  const good = !I.conflicts.length && !unclear.length && !noStore.length;
+  const good = !I.conflicts.length && !unclear.length && !badPlace.length && !noId.length;
   return header("Check before saving", `${esc(I.file)} · ${I.rows.length} rows`, `<button class="btn ghost" onclick="S.imp=null;render()">Cancel</button>`) + `
   ${I.sheets.filter(s => !s.skipped).length > 1 ? `<div class="card pad"><h3>Sheets</h3><p class="note">${I.sheets.map(s => `${esc(s.name.trim())}: ${s.skipped ? "skipped" : `<b>${s.rows}</b> rows`}`).join(" · ")}</p></div>` : ""}
   ${good ? `<div class="okbox section">Everything looks clean.</div>` : ""}
   <div class="card pad section"><h3>Duplicates</h3>
-    ${!I.exactDup.length && !I.conflicts.length ? `<div class="okbox">No duplicate Employee IDs.</div>` : ""}
-    ${I.exactDup.length ? `<p class="note">${I.exactDup.length} Employee IDs appear twice with identical details — merged automatically.</p>` : ""}
-    ${I.conflicts.length ? `<div class="warnbox">${I.conflicts.length} Employee IDs appear more than once with <b>different</b> details. The <b>last row</b> will be used:</div>
-      <div class="tbl-wrap section"><table><thead><tr><th>Employee ID</th><th>Rows in file</th></tr></thead><tbody>${I.conflicts.map(c => `<tr><td class="mono">${esc(c.id)}</td><td>${c.rows.map(r => `${esc(r.where)}: ${esc(r.store)} · ${esc(r.expiry || r.expiry_note)}`).join("<br>")}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    ${!I.exactDup.length && !I.conflicts.length ? `<div class="okbox">Nobody appears twice.</div>` : ""}
+    ${I.exactDup.length ? `<p class="note">${I.exactDup.length} people appear twice with identical details — merged automatically.</p>` : ""}
+    ${I.conflicts.length ? `<div class="warnbox">${I.conflicts.length} people appear more than once with <b>different</b> details. The <b>last row</b> will be used:</div>
+      <div class="tbl-wrap section"><table><thead><tr><th>Person</th><th>Rows in file</th></tr></thead><tbody>${I.conflicts.map(c => `<tr><td>${esc(c.rows[0].name)}</td><td>${c.rows.map(r => `${esc(r.where)}: ${esc(r.store)} · ${esc(r.expiry || r.expiry_note)}`).join("<br>")}</td></tr>`).join("")}</tbody></table></div>` : ""}
   </div>
   <div class="card pad section"><h3>Dates</h3>
     <p class="note"><b>${I.rows.filter(r => r.expiry).length}</b> rows have a date. <b>${missing}</b> have no date (blank, N/A, NOT FOUND) and will show as <b>Date missing</b>.</p>
     ${unclear.length ? `<div class="warnbox">${unclear.length} dates couldn't be read and will be saved as <b>Date missing</b>:</div>${listRows(unclear, r => r.expiry_note)}` : ""}
   </div>
-  ${noStore.length ? `<div class="card pad section"><h3>Store</h3>
-    <div class="warnbox">${noStore.length} rows have no store.</div>${listRows(noStore, () => "(blank)")}
-  </div>` : ""}
+  <div class="card pad section"><h3>Store / department</h3>
+    ${noStore.length ? `<p class="note"><b>${noStore.length}</b> people have no store or department — they go to <b>Unassigned</b> and their store claims them on the Verify page.</p>` : `<div class="okbox">Everyone has a store or department.</div>`}
+    ${badPlace.length ? `<div class="warnbox">${badPlace.length} rows name a store or department Trackit doesn't know. They'll be added as Unassigned:</div>${listRows(badPlace, r => r.store)}` : ""}
+    ${noId.length ? `<div class="warnbox">${noId.length} rows have no Iqama and no Employee No. They'll be added, but can't be matched on a later upload:</div>${listRows(noId, () => "(no ID)")}` : ""}
+  </div>
   <div class="card pad section"><h3>Save</h3>
-    <div class="actions" style="justify-content:flex-start"><button class="btn" id="impBtn" onclick="runImport()">Save ${new Set(I.rows.map(r => r.employee_id)).size} employees</button></div>
+    <div class="actions" style="justify-content:flex-start"><button class="btn" id="impBtn" onclick="runImport()">Save ${new Set(I.rows.map(rowKey)).size.toLocaleString()} employees</button></div>
     <div id="impProg"></div>
   </div>`;
 }
 async function runImport(){
   const I = S.imp; $("#impBtn").disabled = true;
   try {
-    const last = new Map(); I.rows.forEach(r => last.set(r.employee_id || r.where, r));
-    const rows = [...last.values()].map(r => ({ row: r.where, employee_id: r.employee_id, name: r.name, store: r.store, iqama: r.iqama,
-      nationality: r.nationality, mobile: r.mobile, expiry: r.expiry, expiry_note: r.expiry_note, remarks: r.remarks }));
+    const last = new Map(); I.rows.forEach(r => last.set(rowKey(r), r));
+    const rows = [...last.values()].map(r => ({ row: r.where, employee_id: r.employee_id, name: r.name, place: r.store, iqama: r.iqama,
+      nationality: r.nationality, mobile: r.mobile, expiry: r.expiry, expiry_note: r.expiry_note, remarks: r.remarks,
+      job_role: r.job_role, card_status: r.card_status, file_note: r.file_note, check_note: r.check_note }));
     const tot = { added:0, updated:0, skipped:0, back:0, errors:[] };
-    const inFile = new Set(rows.map(r => String(r.employee_id || "").trim()).filter(Boolean));
+    const inFile = new Set(rows.flatMap(r => [r.iqama && "iq:" + r.iqama, r.employee_id && "no:" + r.employee_id]).filter(Boolean));
     for (let i = 0; i < rows.length; i += 500) {
       $("#impProg").innerHTML = `<p class="note">Saving ${Math.min(i + 500, rows.length)} of ${rows.length}…</p>`;
-      const { data, error } = await sb.rpc("trackit_import_v3", { rows: rows.slice(i, i + 500), week_label: null });
+      const { data, error } = await sb.rpc("trackit_import_v4", { rows: rows.slice(i, i + 500), week_label: null });
       if (error) throw error;
       tot.added += data.added; tot.updated += data.updated; tot.skipped += data.skipped; tot.back += data.back || 0; tot.errors.push(...data.errors);
     }
     await loadAll();
-    I.result = tot; I.missing = S.emps.filter(e => !inFile.has(String(e.employee_id).trim())).map(e => e.id);
+    I.result = tot; I.missing = S.emps.filter(e => !inFile.has("iq:" + e.iqama) && !inFile.has("no:" + eid(e))).map(e => e.id);
     render(); toast("Import finished");
   } catch (e) { $("#impProg").innerHTML = `<div class="errlist">${esc(e.message || e)}</div>`; $("#impBtn").disabled = false; }
 }
 function importResult(){
   const t = S.imp.result;
   return header("Import finished", esc(S.imp.file), `<button class="btn" onclick="S.imp=null;go('dashboard')">Go to dashboard</button>`) + `
-  <div class="card pad"><div class="summary"><div><b style="color:var(--teal-d)">${t.added}</b>added</div><div><b style="color:var(--tan-d)">${t.updated}</b>updated</div><div><b>${t.skipped}</b>unchanged</div><div><b style="color:${t.errors.length?"var(--red)":"var(--muted)"}">${t.errors.length}</b>problems</div></div>
+  <div class="card pad"><div class="summary"><div><b style="color:var(--teal-d)">${t.added}</b>added</div><div><b style="color:var(--tan-d)">${t.updated}</b>updated</div><div><b>${t.skipped}</b>unchanged</div><div><b style="color:${t.errors.some(x => !x.warn)?"var(--red)":"var(--muted)"}">${t.errors.length}</b>notes</div></div>
   ${t.back ? `<p class="note">${t.back} ${t.back === 1 ? "person was" : "people were"} marked as left before and ${t.back === 1 ? "is" : "are"} in this file, so ${t.back === 1 ? "they're" : "they're"} active again.</p>` : ""}
-  ${t.errors.length ? `<div class="errlist">${t.errors.slice(0,300).map(e => `<div>${esc(e.row)}: ${esc(e.msg)}</div>`).join("")}</div>` : `<div class="okbox">Everything saved. Dashboards update for everyone automatically.</div>`}
+  ${t.errors.length ? `<div class="errlist">${t.errors.slice(0,300).map(e => `<div>${esc(e.row)}: ${esc(e.msg)}</div>`).join("")}</div>` : `<div class="okbox">Everything saved. Stores and departments can now verify their people on the Verify page.</div>`}
   <div class="actions" style="justify-content:flex-start"><button class="btn ghost" onclick="S.imp=null;render()">Upload another file</button></div></div>
   ${leaverCard()}`;
 }
@@ -691,7 +871,7 @@ function leaverCard(){
     <p class="note">These people are in Trackit but not in the file you just uploaded. <b>If the file is the full, current employee list</b>, they have probably left. Untick anyone who is still working.</p>
     <div class="leaver-tools"><button class="linkbtn" onclick="document.querySelectorAll('.lv').forEach(c=>c.checked=true);countLeavers()">Select all</button> · <button class="linkbtn" onclick="document.querySelectorAll('.lv').forEach(c=>c.checked=false);countLeavers()">Select none</button></div>
     <div class="tbl-wrap"><table><thead><tr><th style="width:36px"></th><th>Employee</th><th class="hm">Store</th><th class="hm">Expiry</th></tr></thead><tbody>
-    ${ppl.map(e => `<tr><td><input type="checkbox" class="lv" value="${e.id}" checked onchange="countLeavers()" aria-label="Mark ${esc(e.name)} as left"></td><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div></td><td class="hm">${esc(e.store)}</td><td class="hm mono">${dateCell(e)}</td></tr>`).join("")}
+    ${ppl.map(e => `<tr><td><input type="checkbox" class="lv" value="${e.id}" checked onchange="countLeavers()" aria-label="Mark ${esc(e.name)} as left"></td><td><b>${esc(e.name)}</b><div class="sub mono">${esc(eid(e) || (e.iqama ? "ID …" + e.iqama.slice(-4) : ""))}<span class="sm-only"> · ${esc(placeOf(e))}</span></div></td><td class="hm">${esc(placeOf(e))}</td><td class="hm mono">${dateCell(e)}</td></tr>`).join("")}
     </tbody></table></div>
     <div class="actions" style="justify-content:flex-start"><button class="btn" id="lvBtn" onclick="markLeavers()">Mark ${ppl.length} as left</button></div></div>`;
 }
@@ -710,31 +890,33 @@ async function markLeavers(){
 // ---------- alerts ----------
 function alerts(){
   const { am, rom, city, region } = S.filters; const mf = (v, w) => !w || (w === "__none" ? !v : v === w);
-  const inArea = e => !(am || rom || city || region) || (m => mf(m?.area_manager, am) && mf(m?.rom, rom) && mf(m?.city, city) && mf(m?.region, region))(mapOf(e));
+  const inArea = e => mf(GROUPS.am[1](e), am) && mf(GROUPS.rom[1](e), rom) && mf(GROUPS.city[1](e), city) && mf(GROUPS.region[1](e), region);
   const by = s => S.emps.filter(e => statusOf(e) === s && inArea(e));
   const lists = { exp: by("exp"), due: by("due"), miss: by("miss") };
   const all = lists[S.alertTab], per = 50, pages = Math.max(1, Math.ceil(all.length / per));
   S.page = Math.min(S.page, pages); const list = all.slice((S.page - 1) * per, S.page * per);
   return header("Alerts", "Who needs a Baladiya renewal", storesNeedingAction().length ? `<button class="btn ghost" onclick="messageStore()">Message a store</button>` : "") + `
-  <div class="tabs">${[["exp","Expired"],["due","Due ≤ 30 days"],["miss","Date missing"]].map(([k,l]) => `<button class="${S.alertTab===k?"on":""}" onclick="S.alertTab='${k}';S.page=1;render()">${l} (${lists[k].length})</button>`).join("")}</div>
-  ${hasMap() ? `<div class="filters">${["region","city","am","rom"].map(k => { const lbl = { region:"All regions", city:"All cities", am:"All area managers", rom:"All ROMs" }[k]; const s = new Set(S.emps.map(e => GROUPS[k][1](e)).filter(Boolean)); return `<select aria-label="${lbl}" onchange="S.filters.${k}=this.value;S.page=1;render()"><option value="">${lbl}</option>${[...s].sort().map(v => `<option value="${esc(v)}" ${S.filters[k]===v?"selected":""}>${esc(v)}</option>`).join("")}</select>`; }).join("")}</div>` : ""}
-  ${S.alertTab === "miss" ? `<p class="note" style="margin-top:-4px">No usable expiry date. Check the Baladiya system and enter the date.</p>` : ""}
+  <div class="tabs">${[["exp","Expired"],["due",STATUS_LABEL.due],["miss","Date missing"]].map(([k,l]) => `<button class="${S.alertTab===k?"on":""}" onclick="S.alertTab='${k}';S.page=1;render()">${l} (${lists[k].length})</button>`).join("")}</div>
+  ${hasMap() && scopeKind() !== "store" && scopeKind() !== "dept" ? `<div class="filters">${["region","city","am","rom"].map(k => { const lbl = { region:"All regions", city:"All cities", am:"All area managers", rom:"All ROMs" }[k]; const s = new Set(S.emps.map(e => GROUPS[k][1](e)).filter(Boolean)); return `<select aria-label="${lbl}" onchange="S.filters.${k}=this.value;S.page=1;render()"><option value="">${lbl}</option>${[...s].sort().map(v => `<option value="${esc(v)}" ${S.filters[k]===v?"selected":""}>${esc(v)}</option>`).join("")}</select>`; }).join("")}</div>` : ""}
+  ${(n => n ? `<div class="warnbox" style="cursor:pointer" onclick="go('verify')">${n.toLocaleString()} ${n === 1 ? "person isn't" : "people aren't"} verified on Balady yet, so ${n === 1 ? "they're" : "they're"} not in these alerts. <b>Go to Verify →</b></div>` : "")(S.emps.filter(e => !e.verified_at && inArea(e)).length)}
+  ${S.alertTab === "miss" ? `<p class="note" style="margin-top:-4px">Verified, but no expiry date on Balady (not registered, or the exam is pending).</p>` : ""}
   <div class="card">${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">Card status / remarks</th><th></th></tr></thead><tbody>
-  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(e.employee_id)}<span class="sm-only"> · ${esc(e.store)}</span></div>${e.card_status ? `<div class="sm-only-b">${csChip(e)}</div>` : ""}</td><td class="hm">${esc(e.store)}${storeSub(e)}</td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
+  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(eid(e) || (e.iqama ? "ID …" + e.iqama.slice(-4) : ""))}<span class="sm-only"> · ${esc(placeOf(e))}</span></div>${e.card_status ? `<div class="sm-only-b">${csChip(e)}</div>` : ""}</td><td class="hm">${esc(placeOf(e))}${storeSub(e)}</td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
   </tbody></table></div>${pages > 1 ? `<div class="pager"><span>${all.length.toLocaleString()} people · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>` : ""}` : `<div class="empty">Nobody in this list.</div>`}</div>`;
 }
 
 // ---------- message a whole store ----------
+const needsMsg = e => ["exp", "due", "miss"].includes(statusOf(e)) || (!!e.card_status && !!e.verified_at);
 function storesNeedingAction(){
-  const c = {}; for (const e of S.emps) if (statusOf(e) !== "ok" || e.card_status) c[e.store || "—"] = (c[e.store || "—"] || 0) + 1;
+  const c = {}; for (const e of S.emps) if (needsMsg(e)) c[placeOf(e)] = (c[placeOf(e)] || 0) + 1;
   return Object.entries(c).sort((x, y) => y[1] - x[1]);
 }
 S.sent = new Set();
 function messageStore(store){
   const list = storesNeedingAction(); if (!list.length) return;
   const st = store ?? (S.msgStore && list.some(x => x[0] === S.msgStore) ? S.msgStore : list[0][0]); S.msgStore = st;
-  const order = { exp:0, due:1, miss:2, ok:3 };
-  const ppl = S.emps.filter(e => (e.store || "—") === st && (statusOf(e) !== "ok" || e.card_status)).sort((x, y) => order[statusOf(x)] - order[statusOf(y)]);
+  const order = { exp:0, due:1, miss:2, ok:3, unv:4 };
+  const ppl = S.emps.filter(e => placeOf(e) === st && needsMsg(e)).sort((x, y) => order[statusOf(x)] - order[statusOf(y)]);
   const done = ppl.filter(e => S.sent.has(e.id)).length;
   modal(`<h3>Message a store</h3>
     <p class="note" style="margin-top:-6px">Everyone at the store who needs action. Tap WhatsApp for each person — the message is already written for their card status.</p>
@@ -753,7 +935,7 @@ function markSent(id){
 
 // ---------- one-page PDF report ----------
 function printReport(){
-  const c = counts(S.emps), csl = cardStatusList(), top = groupRows(e => e.store).filter(([, v]) => v.exp + v.due + v.miss).slice(0, 8);
+  const c = counts(S.emps), csl = cardStatusList(), top = groupRows(placeOf).filter(([, v]) => v.exp + v.due + v.miss).slice(0, 8);
   const soon = S.emps.filter(e => ["exp", "due"].includes(statusOf(e))).slice(0, 8);
   const now = new Date(), stamp = now.toLocaleString("en-GB", { day:"2-digit", month:"long", year:"numeric", hour:"2-digit", minute:"2-digit" });
   const box = (lbl, v, col) => `<div class="r-kpi"><div class="r-l">${lbl}</div><div class="r-v" style="color:${col}">${v}</div></div>`;
@@ -762,13 +944,13 @@ function printReport(){
   const r = document.createElement("div"); r.id = "report";
   r.innerHTML = `<div class="r-head"><div class="r-brand"><img src="icon.svg" alt=""><div><b>Trackit</b><span>Half Million · Baladiya health cards</span></div></div><div class="r-date">${stamp}</div></div>
     <h1>Baladiya card report</h1>
-    <p class="r-sub">${c.total} active employees across ${stores().length} stores${S.left.length ? ` · ${S.left.length} marked as left (not counted)` : ""}</p>
-    <div class="r-kpis">${box("Expired", `${c.exp} <small>${pct(c.exp)}</small>`, "#C2412D")}${box("Due ≤ 30 days", `${c.due} <small>${pct(c.due)}</small>`, "#A8691C")}${box("Date missing", `${c.miss} <small>${pct(c.miss)}</small>`, "#5E574C")}${box("OK", `${c.ok} <small>${pct(c.ok)}</small>`, "#2F8A72")}</div>
+    <p class="r-sub">${scopeName() ? esc(scopeName()) + " · " : ""}${c.total} active employees · ${c.total - c.unv} verified on Balady (${pct(c.total - c.unv)})${S.left.length ? ` · ${S.left.length} marked as left (not counted)` : ""}</p>
+    <div class="r-kpis">${box("Expired", `${c.exp} <small>${pct(c.exp)}</small>`, "#C2412D")}${box(STATUS_LABEL.due, `${c.due} <small>${pct(c.due)}</small>`, "#A8691C")}${box("Date missing", `${c.miss} <small>${pct(c.miss)}</small>`, "#5E574C")}${box("OK", `${c.ok} <small>${pct(c.ok)}</small>`, "#2F8A72")}</div>
     <div class="r-cols">
-      <div><h2>Stores needing action</h2>${top.length ? `<table><thead><tr><th>Store</th><th>Staff</th><th>Expired</th><th>Due</th><th>No date</th></tr></thead><tbody>${top.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v.total}</td><td class="r-red">${v.exp}</td><td>${v.due}</td><td>${v.miss}</td></tr>`).join("")}</tbody></table>` : `<p>No store needs action.</p>`}</div>
+      <div><h2>Needing action</h2>${top.length ? `<table><thead><tr><th>Store / department</th><th>Staff</th><th>Expired</th><th>Due</th><th>No date</th></tr></thead><tbody>${top.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v.total}</td><td class="r-red">${v.exp}</td><td>${v.due}</td><td>${v.miss}</td></tr>`).join("")}</tbody></table>` : `<p>Nothing needs action.</p>`}</div>
       <div><h2>Card status</h2>${csl.length ? `<table><tbody>${csl.map(([k, n]) => `<tr><td>${esc(k)}</td><td class="r-num">${n}</td></tr>`).join("")}</tbody></table>` : `<p>No card statuses recorded yet.</p>`}</div>
     </div>
-    <h2>Needs action soonest</h2>${soon.length ? `<table><thead><tr><th>Employee</th><th>Store</th><th>Expiry</th><th>Card status</th></tr></thead><tbody>${soon.map(e => `<tr><td>${esc(e.name)}</td><td>${esc(e.store)}</td><td class="r-nw">${fmtDate(e.expiry)} · ${relDays(e.expiry)}</td><td>${esc(e.card_status || "—")}</td></tr>`).join("")}</tbody></table>` : `<p>Nobody expired or due in the next 30 days.</p>`}
+    <h2>Needs action soonest</h2>${soon.length ? `<table><thead><tr><th>Employee</th><th>Store</th><th>Expiry</th><th>Card status</th></tr></thead><tbody>${soon.map(e => `<tr><td>${esc(e.name)}</td><td>${esc(placeOf(e))}</td><td class="r-nw">${fmtDate(e.expiry)} · ${relDays(e.expiry)}</td><td>${esc(e.card_status || "—")}</td></tr>`).join("")}</tbody></table>` : `<p>Nobody verified is expired or due in the next ${DUE_DAYS} days.</p>`}
     <div class="r-foot">Generated by Trackit · ${stamp}</div>`;
   document.body.appendChild(r); document.body.classList.add("printing");
   const done = () => { document.body.classList.remove("printing"); r.remove(); window.removeEventListener("afterprint", done); };
@@ -817,10 +999,12 @@ async function adminCall(body){
   let msg = data?.error; if (!msg && error?.context?.json) { try { msg = (await error.context.json()).error; } catch {} }
   return msg || error?.message || "Something went wrong";
 }
+const accessTxt = p => p.role === "admin" ? "Admin — everything" : p.scope_kind === "store" ? `Store: ${S.map[p.scope_value]?.branch || p.scope_value} (${p.scope_value})` : p.scope_kind === "dept" ? `Department: ${p.scope_value}` : p.scope_kind === "am" ? `Area manager: ${p.scope_value}` : "All employees";
 function loginsView(){
-  return header("Users", "Everyone with a login sees all employees. Only admins manage users and delete employees.", `<button class="btn" onclick="addLogin()">+ Add user</button>`) + `
-  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th class="hm">Email</th><th>Role</th><th></th></tr></thead><tbody>
-  ${S.profiles.map(p => `<tr><td><b>${esc(p.full_name || p.email)}</b><div class="sub sm-only">${esc(p.email)}</div></td><td class="hm">${esc(p.email)}</td><td>${p.role === "admin" ? "Admin" : "User"}</td>
+  const noLogin = Object.values(S.map).filter(m => !S.profiles.some(p => p.scope_kind === "store" && p.scope_value === m.code)).length;
+  return header("Users", "Each login sees only its own store, department or area. Admins see everything.", `${noLogin ? `<button class="btn ghost" onclick="bulkLogins()">Create store logins</button>` : ""}<button class="btn" onclick="addLogin()">+ Add user</button>`) + `
+  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th class="hm">Email</th><th>Sees</th><th></th></tr></thead><tbody>
+  ${S.profiles.map(p => `<tr><td><b>${esc(p.full_name || p.email)}</b><div class="sub sm-only">${esc(p.email)}</div></td><td class="hm">${esc(p.email)}</td><td>${esc(accessTxt(p))}${p.role !== "admin" ? ` <button class="linkbtn" onclick="setAccess('${p.id}')">Change</button>` : ""}</td>
     <td style="text-align:right;white-space:nowrap"><button class="btn sm ghost" onclick="resetPw('${p.id}')">${ICON.key}<span class="hm">Reset password</span></button>${p.id !== S.me.id ? `<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delLogin('${p.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
   </tbody></table></div></div>
   ${mappingCard()}
@@ -828,21 +1012,11 @@ function loginsView(){
 }
 // ---------- admin: store mapping ----------
 function mappingCard(){
-  if (!hasMap()) return `<div class="card pad section"><h3>Store mapping</h3><p class="note">The branch list hasn't been synced yet. It comes from the weekly Span of Control sync.</p></div>`;
-  const stores = [...new Set([...S.emps, ...S.left].map(e => e.store).filter(Boolean))].sort();
-  const rows = stores.map(s => ({ s, m: matchStore(s), n: S.emps.filter(e => e.store === s).length }));
-  const missing = rows.filter(r => !r.m);
+  if (!hasMap()) return `<div class="card pad section"><h3>Branches</h3><p class="note">The branch list hasn't been synced yet. It comes from the weekly Span of Control sync.</p></div>`;
   const branches = Object.values(S.map).sort((x, y) => x.branch.localeCompare(y.branch));
-  const opt = cur => `<option value="">— not linked —</option>${branches.map(b => `<option value="${esc(b.code)}" ${cur === b.code ? "selected" : ""}>${esc(b.branch)} (${esc(b.code)})</option>`).join("")}`;
   const synced = S.mapMeta?.synced_at ? fmtTS(S.mapMeta.synced_at) : "not yet";
-  return `<div class="card pad section" id="mapCard"><h3>Store mapping</h3>
-    <p class="note">Area manager and ROM come from the Span of Control file every Sunday (last sync: <b>${synced}</b>, ${Object.keys(S.map).length} branches). City and region are kept here — correct them below and the sync won't overwrite them.</p>
-    ${stores.length ? (missing.length ? `<div class="warnbox">${missing.length} store name${missing.length === 1 ? "" : "s"} in Trackit didn't match a branch automatically. Pick the right branch so ${missing.length === 1 ? "it shows" : "they show"} under the right area manager.</div>` : `<div class="okbox">Every store in Trackit is linked to a branch.</div>`) : `<p class="note">No employees yet — links will show here after the first upload.</p>`}
-    ${stores.length ? `<details class="map-sec" ${missing.length ? "open" : ""}><summary>Store names in Trackit (${stores.length})</summary>
-      <div class="tbl-wrap"><table><thead><tr><th>Name in Trackit</th><th>Branch</th><th class="hm">Area manager</th><th class="hm">ROM</th></tr></thead><tbody>
-      ${rows.sort((x, y) => (!!x.m - !!y.m) || x.s.localeCompare(y.s)).map(r => `<tr class="${r.m ? "" : "unmapped"}"><td><b>${esc(r.s)}</b><div class="sub">${r.n} employee${r.n === 1 ? "" : "s"}${r.m ? ` · ${r.m.how === "linked" ? "linked by admin" : "matched automatically"}` : ""}</div></td>
-        <td><select aria-label="Branch for ${esc(r.s)}" data-store="${esc(r.s)}" onchange="linkStore(this)">${opt(r.m?.code)}</select></td><td class="hm">${esc(r.m?.area_manager || "—")}</td><td class="hm">${esc(r.m?.rom || "—")}</td></tr>`).join("")}
-      </tbody></table></div></details>` : ""}
+  return `<div class="card pad section" id="mapCard"><h3>Branches</h3>
+    <p class="note">Area manager and ROM come from the Span of Control file every Sunday (last sync: <b>${synced}</b>, ${branches.length} branches). Staff are linked to a branch by store code. City and region are kept here — correct them below and the sync won't overwrite them. Departments have no area manager and show under their own name.</p>
     <details class="map-sec"><summary>Branches — city and region (${branches.length})</summary>
       <div class="tbl-wrap"><table><thead><tr><th>Branch</th><th class="hm">Area manager</th><th>City</th><th>Region</th></tr></thead><tbody>
       ${branches.map(b => `<tr><td><b>${esc(b.branch)}</b><div class="sub mono">${esc(b.code)} · ${esc(b.rom)}</div></td><td class="hm">${esc(b.area_manager)}</td>
@@ -876,7 +1050,7 @@ function emailCard(){
   const st = S.settings; if (!st) return "";
   const when = st.frequency === "weekly" ? `every ${DAYS[st.weekday]} at ${hourLabel(st.send_hour)}` : `every day at ${hourLabel(st.send_hour)}`;
   return `<div class="card pad section"><h3>Email alerts</h3>
-    <p class="note">Sends a summary of everyone <b>expired</b> and <b>expiring within 30 days</b> (Riyadh time). No email is sent on days with nothing to report. Iqama and mobile numbers are never included.</p>
+    <p class="note">Sends a summary of everyone <b>expired</b> and <b>expiring within ${DUE_DAYS} days</b> among staff verified on Balady (Riyadh time). No email is sent on days with nothing to report. Iqama and mobile numbers are never included.</p>
     <form id="alertForm" onsubmit="event.preventDefault();saveAlerts()">
       <div class="steprow"><span><b>Alerts</b> <span class="sub">${st.email_enabled ? `On — ${when}` : "Off"}</span></span>
         <div class="seg"><button type="button" class="${!st.email_enabled ? "on" : ""}" onclick="pickAlert(this,false)">Off</button><button type="button" class="${st.email_enabled ? "on done" : ""}" onclick="pickAlert(this,true)">On</button></div></div>
@@ -925,13 +1099,79 @@ function addLogin(){
     <label>Full name</label><input type="text" name="full_name" required>
     <label>Email</label><input type="email" name="email" required>
     <label>Starting password (min 8 characters)</label><input type="text" name="password" required minlength="8" autocomplete="off">
-    <label>Role</label><select name="role"><option value="manager">User — sees and updates all employees</option><option value="admin">Admin — also manages users</option></select>
+    ${accessFields("manager", "store", "")}
     <div class="err" id="lerr2"></div>
     <div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" id="lbtn2">Create login</button></div></form>`);
   $("#lf").onsubmit = async ev => { ev.preventDefault(); $("#lbtn2").disabled = true;
-    const err = await adminCall({ action:"create", ...Object.fromEntries(new FormData(ev.target)) });
+    const fd = Object.fromEntries(new FormData(ev.target)), acc = readAccess(fd); if (acc.error) { $("#lbtn2").disabled = false; return $("#lerr2").textContent = acc.error; }
+    const err = await adminCall({ action:"create", full_name: fd.full_name, email: fd.email, password: fd.password, ...acc });
     $("#lbtn2").disabled = false; if (err) return $("#lerr2").textContent = err;
     closeModal(); toast("Login created — share the password privately"); await loadAll(); render(); };
+}
+// who a login can see: everything, one area manager's stores, one store, or one department
+function accessFields(role, kind, val){
+  const k = role === "admin" ? "admin" : kind || "all";
+  const ams = [...new Set(Object.values(S.map).map(m => m.area_manager).filter(Boolean))].sort();
+  const br = Object.values(S.map).sort((x, y) => x.branch.localeCompare(y.branch));
+  const box = (kk, html) => `<div class="acc-v ${k === kk ? "" : "hidden"}" data-k="${kk}">${html}</div>`;
+  return `<label>Sees</label><select name="acc" onchange="document.querySelectorAll('.acc-v').forEach(d => d.classList.toggle('hidden', d.dataset.k !== this.value))">
+      ${[["store","One store"],["dept","One department"],["am","An area manager's stores"],["all","All employees"],["admin","Admin — everything, plus users and import"]].map(([v, l]) => `<option value="${v}" ${k === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+    ${box("store", `<label>Store</label><select name="v_store"><option value="">— pick —</option>${br.map(b => `<option value="${esc(b.code)}" ${k === "store" && val === b.code ? "selected" : ""}>${esc(b.branch)} (${esc(b.code)})</option>`).join("")}</select>`)}
+    ${box("dept", `<label>Department</label><select name="v_dept"><option value="">— pick —</option>${S.depts.map(d => `<option ${k === "dept" && val === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>`)}
+    ${box("am", `<label>Area manager</label><select name="v_am"><option value="">— pick —</option>${ams.map(a => `<option ${k === "am" && val === a ? "selected" : ""}>${esc(a)}</option>`).join("")}</select>`)}`;
+}
+function readAccess(fd){
+  const a = fd.acc || "all";
+  if (a === "admin") return { role: "admin", scope_kind: "all", scope_value: "" };
+  if (a === "all") return { role: "manager", scope_kind: "all", scope_value: "" };
+  const v = fd["v_" + a] || ""; if (!v) return { error: "Pick which " + ({ store: "store", dept: "department", am: "area manager" }[a]) + " this login sees." };
+  return { role: "manager", scope_kind: a, scope_value: v };
+}
+function setAccess(id){
+  const p = S.profiles.find(x => x.id === id);
+  modal(`<h3>Change access</h3><p class="note">For ${esc(p.full_name || p.email)}</p><form id="af">${accessFields(p.role, p.scope_kind, p.scope_value)}
+    <div class="err" id="aerr"></div><div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn">Save</button></div></form>`);
+  $("#af").onsubmit = async ev => { ev.preventDefault(); const acc = readAccess(Object.fromEntries(new FormData(ev.target))); if (acc.error) return $("#aerr").textContent = acc.error;
+    const err = await adminCall({ action: "set_access", id, ...acc }); if (err) return $("#aerr").textContent = err; closeModal(); toast("Access saved"); await loadAll(); render(); };
+}
+// one login per store, with a printable list of passwords
+const genPw = () => { const c = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", a = new Uint32Array(10); crypto.getRandomValues(a); return [...a].map(x => c[x % c.length]).join(""); };
+function bulkLogins(){
+  const todo = Object.values(S.map).filter(m => !S.profiles.some(p => p.scope_kind === "store" && p.scope_value === m.code)).sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true }));
+  modal(`<h3>Create store logins</h3><p class="note" style="margin-top:-6px">One login for each of the <b>${todo.length}</b> stores that don't have one yet. Each store sees only its own staff. Passwords are made up at random and shown <b>once</b> — print or save the list straight away.</p>
+    <form id="bf"><label>Email ending</label><input type="text" name="domain" value="trackit.halfm.sa" required>
+    <p class="note">Logins look like <b class="mono">${esc(todo[0]?.code.toLowerCase() || "b05")}@trackit.halfm.sa</b>. No emails are sent to these addresses.</p>
+    <div class="err" id="berr"></div><div id="bprog"></div>
+    <div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" id="bbtn">Create ${todo.length} logins</button></div></form>`);
+  $("#bf").onsubmit = async ev => {
+    ev.preventDefault(); const dom = new FormData(ev.target).get("domain").trim().replace(/^@/, "").toLowerCase();
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(dom)) return $("#berr").textContent = "Enter an email ending like trackit.halfm.sa";
+    $("#bbtn").disabled = true; const made = [], fails = [];
+    for (let i = 0; i < todo.length; i += 20) {
+      $("#bprog").innerHTML = `<p class="note">Creating ${Math.min(i + 20, todo.length)} of ${todo.length}…</p>`;
+      const items = todo.slice(i, i + 20).map(m => ({ code: m.code, full_name: `${m.branch} (${m.code})`, email: `${m.code.toLowerCase()}@${dom}`, password: genPw() }));
+      const { data, error } = await sb.functions.invoke("trackit-admin-users", { body: { action: "bulk_create", items } });
+      if (error || !data?.results) { fails.push(...items.map(x => [x.code, data?.error || error?.message || "failed"])); continue; }
+      for (const r of data.results) { const it = items.find(x => x.code === r.code); if (r.ok) made.push(it); else fails.push([r.code, r.error]); }
+    }
+    await loadAll(); render(); printLogins(made, fails);
+  };
+}
+function printLogins(made, fails){
+  modal(`<h3>${made.length} store logins created</h3>
+    ${made.length ? `<p class="note">Print or save this now — the passwords are not stored anywhere you can see again (you can still reset any of them).</p>
+    <div class="tbl-wrap" id="loginList"><table><thead><tr><th>Store</th><th>Email</th><th>Password</th></tr></thead><tbody>${made.map(m => `<tr><td>${esc(m.full_name)}</td><td class="mono">${esc(m.email)}</td><td class="mono">${esc(m.password)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    ${fails.length ? `<div class="errlist">${fails.map(([c, e]) => `<div>${esc(c)}: ${esc(e)}</div>`).join("")}</div>` : ""}
+    <div class="actions">${made.length ? `<button class="btn ghost" onclick="downloadCSV('trackit-store-logins.csv', [['Store','Email','Password'], ...S.lastLogins.map(m => [m.full_name, m.email, m.password])])">Download list</button><button class="btn ghost" onclick="printList()">Print</button>` : ""}<button class="btn" onclick="S.lastLogins=null;closeModal()">Done</button></div>`, true);
+  S.lastLogins = made;
+}
+function printList(){
+  document.getElementById("report")?.remove();
+  const r = document.createElement("div"); r.id = "report";
+  r.innerHTML = `<div class="r-head"><div class="r-brand"><img src="icon.svg" alt=""><div><b>Trackit</b><span>Store logins — keep private</span></div></div><div class="r-date">${new Date().toLocaleDateString("en-GB")}</div></div>${$("#loginList").innerHTML}`;
+  document.body.appendChild(r); document.body.classList.add("printing");
+  const done = () => { document.body.classList.remove("printing"); r.remove(); window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done); setTimeout(() => window.print(), 150);
 }
 function resetPw(id){
   const m = S.profiles.find(x => x.id === id);
