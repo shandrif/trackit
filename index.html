@@ -388,6 +388,9 @@ tr.unmapped td:first-child b{color:var(--red)}
   .vres{justify-items:start;text-align:left}
   .vbtns .btn:first-child{flex:1}
 }
+.balady-card{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px;border:1px solid var(--tan)}
+.balady-card .btn{white-space:nowrap}
+@media (max-width:760px){.balady-card{flex-direction:column;align-items:stretch}.balady-card .btn{text-align:center}}
 /* ================= Trackit motion & glass layer =================
    Motion rules (after Emil Kowalski's animation standards):
    - UI motion < 300ms, strong ease-out, never ease-in, no bounce on a work dashboard
@@ -616,6 +619,8 @@ const SUPABASE_URL = "https://rcufmnidwyycbrtqgqga.supabase.co";
 const SUPABASE_KEY = "sb_publishable_u2__PPq2nDZLyoNnLHxkVA_olltjpHc";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const DUE_DAYS = 45;
+const BALADY_URL = "https://eservices.alriyadh.gov.sa/_layouts/RM_Pages/Medical/SearchAllCertificates.aspx";
+const baladyBtn = (cls = "btn tan") => `<a class="${cls}" href="${BALADY_URL}" target="_blank" rel="noopener">Check health certificate on Balady ↗</a>`;
 const NATIONALITIES = ["Saudi","Bangladeshi","Indian","Filipino","Pakistani","Nepali","Egyptian","Sudanese","Yemeni","Eritrean","Sri Lankan","Jordanian","Syrian","Other"];
 const CARD_STATUSES = ["Needs medical exam","Medical scheduled","Training pending","Training done but card status not updated","Rescheduled for exam","Need to pay SAR 60","Needs Balady registration","Waiting for health-center visit","Renewal in process"];
 const COLS = ["Iqama / National ID","Employee No","Name","Store / Department","Job Role","Nationality","Mobile","Expiry Date","Card Status","Remarks"];
@@ -928,8 +933,9 @@ function dashboard(){
   const csl = cardStatusList();
   const nStores = new Set(S.emps.filter(e => e.unit_kind === "store").map(e => e.unit)).size, nDept = new Set(S.emps.filter(isDept).map(e => e.unit)).size;
   const vDone = c.total - c.unv;
-  return header("Dashboard", `${scopeName() ? esc(scopeName()) + " · " : ""}${c.total.toLocaleString()} employees · ${nStores} stores${nDept ? ` · ${nDept} departments` : ""}${S.left.length ? ` · ${S.left.length} marked as left` : ""}`,
+  return header("Dashboard", `${scopeName() ? esc(scopeName()) + " · " : ""}${c.total.toLocaleString()} employees${nStores > 1 ? ` · ${nStores} stores` : ""}${nDept > 1 ? ` · ${nDept} departments` : ""}${S.left.length ? ` · ${S.left.length} marked as left` : ""}`,
     S.emps.length ? `<button class="btn ghost" onclick="printReport()">PDF report</button>` : "") + `
+  <div class="card pad balady-card"><div><b>Check a health certificate</b><div class="sub" dir="rtl" lang="ar">الاستعلام عن الشهادة الصحية</div><p class="note" style="margin:4px 0 0">Open the Balady website, search with the employee's Iqama number, then confirm the expiry date on the Verify page.</p></div>${baladyBtn()}</div>
   ${c.total ? `<div class="card pad vprog-card" onclick="go('verify')" style="cursor:pointer"><div class="vprog-top"><b>Balady verification</b><span class="mono">${vDone.toLocaleString()} of ${c.total.toLocaleString()} verified</span></div>
     <div class="vbar"><i style="width:${Math.round(vDone / c.total * 100)}%"></i></div><p class="note" style="margin:6px 0 0">${c.unv ? `${c.unv.toLocaleString()} still to check on the Balady website. Alerts only count verified people.` : "Everyone is verified. Alerts are based on confirmed dates."}</p></div>` : ""}
   <div class="kpis k5">
@@ -964,7 +970,7 @@ function verifyView(){
   const pct = all.length ? Math.round(done / all.length * 100) : 0;
   const prog = wide && all.length ? groupRows(placeOf).map(([p, v]) => [p, v.total, v.total - v.unv]).sort((x, y) => (x[0] === "Unassigned" ? -1 : y[0] === "Unassigned" ? 1 : 0) || (x[2] / x[1]) - (y[2] / y[1]) || y[1] - x[1]) : [];
   const nUn = all.filter(e => e.unit_kind === "unassigned").length;
-  return header("Verify on Balady", scopeName() ? esc(scopeName()) : "Check every person on the Balady website, then confirm", `<button class="btn ghost" onclick="findPerson()">Find a person</button>${k !== "am" ? `<button class="btn" onclick="editEmp()">+ Add</button>` : ""}`) + `
+  return header("Verify on Balady", scopeName() ? esc(scopeName()) : "Check every person on the Balady website, then confirm", `${baladyBtn("btn tan")}<button class="btn ghost" onclick="findPerson()">Find a person</button>${k !== "am" ? `<button class="btn" onclick="editEmp()">+ Add</button>` : ""}`) + `
   <div class="card pad"><div class="vprog-top"><b>${done.toLocaleString()} of ${all.length.toLocaleString()} verified</b><span class="mono">${pct}%</span></div><div class="vbar"><i style="width:${pct}%"></i></div>
     <p class="note" style="margin:8px 0 0">Open each person on the Balady website, enter the expiry date it shows (Gregorian or Hijri) and press <b>Confirm</b>. Only confirmed people count in alerts${DUE_DAYS ? ` (warning ${DUE_DAYS} days before expiry)` : ""}.
     ${k === "store" || k === "dept" ? ` Someone here who isn't on your list? Use <b>Find a person</b>. Someone on your list who doesn't work here? Press <b>Not here</b>.` : ""}</p></div>
