@@ -416,18 +416,17 @@ tr.unmapped td:first-child b{color:var(--red)}
 
 /* ---- ambient background (slow, decorative, off for reduced motion) ---- */
 .ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-.ambient i{position:absolute;border-radius:50%;opacity:.7;will-change:transform}
-.ambient i:nth-child(1){width:46vmax;height:46vmax;left:-12vmax;top:-14vmax;background:radial-gradient(circle,rgba(212,179,139,.55),rgba(212,179,139,0) 68%);animation:drift1 28s var(--ease-in-out) infinite alternate}
-.ambient i:nth-child(2){width:40vmax;height:40vmax;right:-10vmax;top:18vh;background:radial-gradient(circle,rgba(132,198,178,.42),rgba(132,198,178,0) 66%);animation:drift2 34s var(--ease-in-out) infinite alternate}
-.ambient i:nth-child(3){width:36vmax;height:36vmax;left:28vw;bottom:-18vmax;background:radial-gradient(circle,rgba(169,135,95,.32),rgba(169,135,95,0) 66%);animation:drift3 40s var(--ease-in-out) infinite alternate}
+.ambient i{position:absolute;border-radius:50%;opacity:.7}
+.ambient i:nth-child(1){width:46vmax;height:46vmax;left:-12vmax;top:-14vmax;background:radial-gradient(circle,rgba(212,179,139,.55),rgba(212,179,139,0) 68%);}
+.ambient i:nth-child(2){width:40vmax;height:40vmax;right:-10vmax;top:18vh;background:radial-gradient(circle,rgba(132,198,178,.42),rgba(132,198,178,0) 66%);}
+.ambient i:nth-child(3){width:36vmax;height:36vmax;left:28vw;bottom:-18vmax;background:radial-gradient(circle,rgba(169,135,95,.32),rgba(169,135,95,0) 66%);}
 @keyframes drift1{to{transform:translate(9vmax,7vmax) scale(1.12)}}
 @keyframes drift2{to{transform:translate(-8vmax,-6vmax) scale(.9)}}
 @keyframes drift3{to{transform:translate(-6vmax,-9vmax) scale(1.15)}}
 #login,#noaccess,#shell,#modalRoot{position:relative;z-index:1}
 
 /* ---- glass surfaces ---- */
-.card{background:var(--glass);border:1px solid var(--glass-edge);
-  -webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);
+.card{background:rgba(252,248,242,.94);border:1px solid var(--glass-edge);
   transition:transform 200ms var(--ease-out),box-shadow 200ms var(--ease-out)}
 .kpi{position:relative;overflow:hidden;transition:transform 200ms var(--ease-out),box-shadow 200ms var(--ease-out)}
 .kpi::after{content:"";position:absolute;inset:0;background:radial-gradient(220px circle at var(--mx,50%) var(--my,0%),rgba(255,255,255,.7),transparent 60%);opacity:0;transition:opacity 200ms var(--ease-out);pointer-events:none}
@@ -439,7 +438,7 @@ th{background:rgba(251,246,239,.85)}
   animation:rise 300ms var(--ease-out) both}
 aside{background:var(--glass-dark);-webkit-backdrop-filter:blur(22px) saturate(160%);backdrop-filter:blur(22px) saturate(160%);border-right:1px solid rgba(255,255,255,.06)}
 .filters{position:sticky;top:10px;z-index:5;padding:10px;margin:0 -10px 14px;border-radius:16px;transition:background-color 200ms var(--ease-out),box-shadow 200ms var(--ease-out)}
-.filters.stuck{background:rgba(245,237,227,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 10px 30px -18px rgba(80,56,30,.4)}
+.filters.stuck{background:rgba(245,237,227,.96);box-shadow:0 10px 30px -18px rgba(80,56,30,.4)}
 input[type=text],input[type=email],input[type=password],input[type=date],input[type=search],select,textarea{
   background:rgba(255,255,255,.82);transition:border-color 150ms var(--ease-out),box-shadow 150ms var(--ease-out),background-color 150ms var(--ease-out)}
 input:focus,select:focus,textarea:focus{background:#fff}
@@ -463,7 +462,7 @@ nav > .ind{background:var(--tan);box-shadow:0 6px 18px -6px rgba(212,179,139,.6)
 /* ---- buttons ---- */
 .btn{position:relative;overflow:hidden;isolation:isolate;transition:transform 160ms var(--ease-out),box-shadow 200ms var(--ease-out),background-color 150ms var(--ease-out)}
 .btn:active:not(:disabled){transform:scale(.97)}
-.btn.ghost{background:rgba(255,255,255,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.btn.ghost{background:rgba(255,255,255,.62)}
 .btn.arrow::after{content:"→";display:inline-block;width:0;opacity:0;transform:translateX(-4px);transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
 .ripple{position:absolute;border-radius:50%;pointer-events:none;z-index:2;transform:scale(.15);opacity:.9;
   background:radial-gradient(circle,var(--rc,rgba(255,255,255,.55)) 0 30%,transparent 64%);
@@ -518,7 +517,7 @@ tbody tr td:first-child{box-shadow:inset 0 0 0 0 var(--tan);transition:box-shado
 .toast.show{opacity:1;transform:translate(-50%,0) scale(1)}
 
 /* ---- modal: centred, fast scale-in from .96 ---- */
-.modal-bg{background:rgba(17,17,17,.32);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);animation:fade 200ms var(--ease-out) both}
+.modal-bg{background:rgba(17,17,17,.45);animation:fade 200ms var(--ease-out) both}
 .modal{background:var(--glass-strong);border:1px solid var(--glass-edge);-webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%);
   box-shadow:0 30px 80px -30px rgba(40,28,15,.55);animation:pop 220ms var(--ease-out) both}
 @keyframes pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
@@ -532,10 +531,9 @@ tbody tr td:first-child{box-shadow:inset 0 0 0 0 var(--tan);transition:box-shado
 
 /* ---- phone ---- */
 @media (max-width:900px){
-  .mobile-top{background:var(--glass-dark);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%)}
-  .bottom-nav{background:var(--glass-dark);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);border-top:1px solid rgba(255,255,255,.06)}
+  .mobile-top{background:rgba(24,22,20,.97)}
+  .bottom-nav{background:rgba(24,22,20,.97);border-top:1px solid rgba(255,255,255,.06)}
   .filters{top:66px}
-  .card{-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
   .ambient i{opacity:.4}
   .toast{bottom:calc(84px + env(safe-area-inset-bottom))}
   .kpis.k5 > :last-child{grid-column:span 2}
@@ -801,6 +799,7 @@ async function bootInner(session){
   if (!session) { const { data } = await sb.auth.getSession(); session = data.session; }
   if (!session) return show("login");
   // check with the login server that this login is still active (it may have been ended on another device)
+  const core = loadCore().catch(() => null);          // start the data download straight away
   const [{ error: uErr }, { data: me, error: meErr }] = await Promise.all([
     sb.auth.getUser().catch(err => ({ error: err })),
     sb.from("trackit_profiles").select("*").eq("id", session.user.id).maybeSingle(),
@@ -812,7 +811,7 @@ async function bootInner(session){
   $("#meName").textContent = me.full_name || me.email;
   $("#meRole").textContent = isAdmin() ? "Admin" : scopeKind() === "all" ? "User" : ({ store:"Store", dept:"Department", am:"Area manager" }[scopeKind()]);
   show("shell");
-  await loadAll(); subscribe();
+  await Promise.all([core, loadAdmin()]); subscribe();
   go(location.hash.slice(1) || "dashboard");
   hideSplash();
 }
@@ -826,34 +825,34 @@ function showConnError(){ hideSplash();
 }
 
 // ---------- data ----------
+// pages of 1,000 rows, fetched 3 at a time in parallel (2,000+ staff arrive in one round trip)
 async function pageAll(table, order){
-  const rows = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await sb.from(table).select("*").order(order).order("id").range(from, from + 999);
-    if (error) { toast(error.message); break; }
-    rows.push(...data); if (data.length < 1000) break;
+  const rows = [], page = from => sb.from(table).select("*").order(order).order("id").range(from, from + 999);
+  for (let from = 0; ; from += 3000) {
+    const res = await Promise.all([page(from), page(from + 1000), page(from + 2000)]);
+    for (const { data, error } of res) { if (error) { toast(error.message); return rows; } rows.push(...data); }
+    if (res.some(r => (r.data || []).length < 1000)) return rows;
   }
-  return rows;
 }
-async function loadAll(){
-  const all = (await pageAll("trackit_staff", "expiry")).sort((a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : 1);
+// everything loads at the same time — one round trip instead of several in a row
+async function loadAll(){ await Promise.all([loadCore(), loadAdmin()]); }
+async function loadCore(){
+  const [all, mp, al, mm, dp] = await Promise.all([pageAll("trackit_staff", "expiry"), sb.from("trackit_store_map").select("*").order("code"), sb.from("trackit_store_alias").select("store,code"), sb.from("trackit_map_meta").select("*").eq("id", 1).maybeSingle(), sb.from("trackit_departments").select("name").order("sort"), loadReqs()]);
+  all.sort((a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : 1);
   S.emps = all.filter(e => !e.left_at);                 // active staff: every count, list, alert and email uses these
   S.left = all.filter(e => e.left_at).sort((a, b) => a.left_at < b.left_at ? 1 : -1);
-  const [mp, al, mm, dp] = await Promise.all([sb.from("trackit_store_map").select("*").order("code"), sb.from("trackit_store_alias").select("store,code"), sb.from("trackit_map_meta").select("*").eq("id", 1).maybeSingle(), sb.from("trackit_departments").select("name").order("sort")]);
   if (!dp.error && Array.isArray(dp.data)) S.depts = dp.data.map(d => d.name);
   if (!mp.error && Array.isArray(mp.data)) { S.map = {}; for (const m of mp.data) S.map[m.code] = m; }
   if (!al.error && Array.isArray(al.data)) { S.alias = {}; for (const x of al.data) S.alias[x.store] = x.code; }
   if (!mm.error) S.mapMeta = mm.data || null;
   mapCache = new Map();
-  await loadReqs();
-  await loadAdmin();
 }
 async function loadAdmin(){
   if (isAdmin()) {
-    const [{ data }, { data: st }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
-      sb.from("trackit_settings").select("email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result").eq("id", 1).maybeSingle()]);
+    const [{ data }, { data: st }, { data: cr }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
+      sb.from("trackit_settings").select("email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result").eq("id", 1).maybeSingle(),
+      sb.from("trackit_login_creds").select("profile_id,login,password")]);
     S.profiles = data || []; S.settings = st;
-    const { data: cr } = await sb.from("trackit_login_creds").select("profile_id,login,password");
     S.creds = {}; for (const c of cr || []) S.creds[c.profile_id] = c;
   }
 }
@@ -942,6 +941,8 @@ function render(fromLive){
   if (S.view === "import") bindDrop();
   if (keepFocus && document.getElementById(keepFocus)) { const el = document.getElementById(keepFocus); el.focus(); if (el.setSelectionRange && el.value) el.setSelectionRange(el.value.length, el.value.length); }
 }
+// run after typing pauses (search boxes), so the page isn't rebuilt on every letter
+let laterT = null; const later = (fn, ms = 180) => { clearTimeout(laterT); laterT = setTimeout(fn, ms); };
 const header = (t, p, extra="") => `<div class="top"><div><h2>${t}</h2><p>${p}</p></div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="live" title="Updates appear automatically"><i></i><span class="on-txt">Live</span><span class="off-txt">Reconnecting…</span></span>${extra}</div></div>`;
 
 // ---------- dashboard ----------
@@ -1000,6 +1001,7 @@ function openCs(k){ S.filters = { q:"", store:"", status:"", cs:k, am:"", rom:""
 function quick(st){ S.filters = { q:"", store:"", status:st, cs:"", am:"", rom:"", city:"", region:"" }; go("employees"); }
 
 // ---------- verify on Balady ----------
+const progOpen = () => S.progOpen ?? false;
 function verifyView(){
   const k = scopeKind(), wide = k === "all" || k === "am";
   const all = S.emps, done = all.filter(e => e.verified_at).length;
@@ -1007,22 +1009,21 @@ function verifyView(){
   const ql = S.vq.trim().toLowerCase();
   const match = e => !ql || e.name.toLowerCase().includes(ql) || eid(e).toLowerCase().includes(ql) || String(e.iqama).includes(ql) || String(e.job_role || "").toLowerCase().includes(ql);
   const todo = base.filter(e => !e.verified_at && match(e)), ok = base.filter(e => e.verified_at && match(e)).sort((a, b) => a.verified_at < b.verified_at ? 1 : -1);
-  const list = S.vTab === "done" ? ok : todo, per = 30, pages = Math.max(1, Math.ceil(list.length / per));
+  const list = S.vTab === "done" ? ok : todo, per = 15, pages = Math.max(1, Math.ceil(list.length / per));
   S.page = Math.min(S.page, pages); const slice = list.slice((S.page - 1) * per, S.page * per);
   const pct = all.length ? Math.round(done / all.length * 100) : 0;
   const prog = wide && all.length ? groupRows(placeOf).map(([p, v]) => [p, v.total, v.total - v.unv]).sort((x, y) => (x[0] === "Unassigned" ? -1 : y[0] === "Unassigned" ? 1 : 0) || (x[2] / x[1]) - (y[2] / y[1]) || y[1] - x[1]) : [];
   const nUn = all.filter(e => e.unit_kind === "unassigned").length;
   return header("Verify on Balady", scopeName() ? esc(scopeName()) : "Check every person on the Balady website, then confirm", `${baladyBtn("btn tan")}<button class="btn ghost" onclick="findPerson()">Find a person</button>${k !== "am" ? `<button class="btn" onclick="editEmp()">+ Add</button>` : ""}`) + `
   <div class="card pad"><div class="vprog-top"><b>${done.toLocaleString()} of ${all.length.toLocaleString()} verified</b><span class="mono">${pct}%</span></div><div class="vbar"><i style="width:${pct}%"></i></div>
-    <p class="note" style="margin:8px 0 0">For each person enter the <b>Iqama</b> and <b>mobile</b>, check them on the Balady website, enter the expiry date it shows (Gregorian or Hijri) and press <b>Confirm</b>. Only confirmed people count in alerts${DUE_DAYS ? ` (warning ${DUE_DAYS} days before expiry)` : ""}.
-    ${k === "store" || k === "dept" ? ` Someone here who isn't on your list? Use <b>Find a person</b> to request them — their current store approves the move. Someone on your list who doesn't work here? Press <b>Not here</b>.` : ""}</p></div>
+    <p class="note" style="margin:8px 0 0">Enter <b>Iqama</b> and <b>mobile</b> → check on Balady → enter the expiry (Gregorian or Hijri) → <b>Confirm</b>.${k === "store" || k === "dept" ? ` Missing someone? <b>Find a person</b>. Not working here? <b>Not here</b>.` : ""}</p></div>
   ${reqPanel()}
   ${wide && nUn ? `<div class="warnbox section" style="cursor:pointer" onclick="S.vUnit='Unassigned';S.page=1;render()"><b>${nUn.toLocaleString()} people have no store or department yet.</b> Their store can claim them with Find a person, or ${isAdmin() ? "you can" : "an admin can"} set it with Edit.</div>` : ""}
-  ${prog.length ? `<details class="card section map-sec" ${S.vUnit ? "" : "open"}><summary style="padding:14px 16px">Progress by store and department (${prog.length})</summary><div class="tbl-wrap"><table><thead><tr><th>Store / department</th><th>Staff</th><th>Verified</th><th class="hm">Left to check</th></tr></thead><tbody>
+  ${prog.length ? `<details class="card section map-sec" ${progOpen() ? "open" : ""} ontoggle="if(this.open!==progOpen()){S.progOpen=this.open;render()}"><summary style="padding:14px 16px">Progress by store and department (${prog.length})</summary>${!progOpen() ? "" : `<div class="tbl-wrap"><table><thead><tr><th>Store / department</th><th>Staff</th><th>Verified</th><th class="hm">Left to check</th></tr></thead><tbody>
     ${prog.map(([p, t, v]) => `<tr style="cursor:pointer" data-p="${esc(p)}" onclick="S.vUnit=this.dataset.p;S.vTab='todo';S.page=1;render()"><td><b>${esc(p)}</b></td><td class="mono">${t}</td><td><div class="vbar sm"><i style="width:${Math.round(v / t * 100)}%"></i></div><span class="sub">${v} · ${Math.round(v / t * 100)}%</span></td><td class="mono hm">${t - v}</td></tr>`).join("")}
-    </tbody></table></div></details>` : ""}
+    </tbody></table></div>`}</details>` : ""}
   <div class="filters section">
-    <input id="vq" type="search" placeholder="Search name, Employee No., Iqama or job…" value="${esc(S.vq)}" oninput="S.vq=this.value;S.page=1;render()">
+    <input id="vq" type="search" placeholder="Search name, Employee No., Iqama or job…" value="${esc(S.vq)}" oninput="later(()=>{S.vq=this.value;S.page=1;render()})">
     ${wide || stores().length > 1 ? `<select aria-label="Store or department" onchange="S.vUnit=this.value;S.page=1;render()"><option value="">All stores & departments</option>${stores().map(p => `<option value="${esc(p)}" ${S.vUnit === p ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>` : ""}
   </div>
   <div class="tabs">${[["todo", `To verify (${todo.length})`], ["done", `Verified (${ok.length})`]].map(([t, l]) => `<button class="${S.vTab === t ? "on" : ""}" onclick="S.vTab='${t}';S.page=1;render()">${l}</button>`).join("")}</div>
@@ -1038,11 +1039,11 @@ function vRow(e){
       <div class="sub">In the file: ${e.expiry ? `<b>${fmtDate(e.expiry)}</b>` : `<b>${esc(e.expiry_note || "no date")}</b>`}${e.card_status ? ` · ${esc(e.card_status)}` : ""}</div>
       ${e.check_note ? `<div class="vcheck">${esc(e.check_note)}</div>` : ""}</div>
     <div class="vform">
-      <div class="vin"><label>Iqama / National ID</label><input type="text" id="vi-${e.id}" inputmode="numeric" maxlength="10" value="${esc(e.iqama || "")}" placeholder="10 digits"></div>
-      <div class="vin"><label>Mobile</label><input type="text" id="vm-${e.id}" inputmode="tel" maxlength="14" value="${esc(e.mobile || "")}" placeholder="5XXXXXXXX"></div>
-      <div class="vin"><label>Expiry on Balady</label><input type="date" id="vd-${e.id}" value="${esc(e.expiry || "")}"></div>
-      <div class="vin"><label>or Hijri</label>${hijriBox(`vd-${e.id}`)}</div>
-      <label class="chk sm"><input type="checkbox" id="vn-${e.id}" onchange="if(this.checked)$('#vd-${e.id}').value=''"> Not on Balady / no card</label>
+      <div class="vin"><label>Iqama / National ID</label><input type="text" id="vi-${e.id}" inputmode="numeric" maxlength="10" value="${esc(dr(e, "vi", e.iqama))}" placeholder="10 digits" oninput="keep(this)"></div>
+      <div class="vin"><label>Mobile</label><input type="text" id="vm-${e.id}" inputmode="tel" maxlength="14" value="${esc(dr(e, "vm", e.mobile))}" placeholder="5XXXXXXXX" oninput="keep(this)"></div>
+      <div class="vin"><label>Expiry on Balady</label><input type="date" id="vd-${e.id}" value="${esc(dr(e, "vd", e.expiry))}" onchange="keep(this)"></div>
+      <div class="vin"><label>or Hijri</label>${hijriBox(`vd-${e.id}`, `vh-${e.id}`, dr(e, "vh", ""))}</div>
+      <label class="chk sm"><input type="checkbox" id="vn-${e.id}" ${dr(e, "vn", "") ? "checked" : ""} onchange="keep(this);if(this.checked){$('#vd-${e.id}').value='';keep($('#vd-${e.id}'))}"> Not on Balady / no card</label>
       <div class="err" id="ve-${e.id}"></div>
       <div class="vbtns"><button class="btn" onclick="vConfirm('${e.id}', this)">Confirm</button>
         <button class="btn ghost sm" onclick="editEmp('${e.id}')">Edit</button>
@@ -1065,7 +1066,7 @@ async function vConfirm(id, btn){
   const row = { iqama: iq, mobile: mob, expiry: none ? null : d, expiry_note: none ? "Not on Balady" : "", verified_at: new Date().toISOString() };
   let res; try { res = await sb.from("trackit_staff").update(row).eq("id", id).eq("updated_at", e.updated_at).select("id,updated_at"); } catch (err) { res = { error: { message: loginError(err) } }; }
   if (res.error || !res.data?.length) { btn.disabled = false; btn.textContent = "Confirm"; er.textContent = res.error?.code === "23505" ? "This Iqama number is already used by another employee in Trackit. Check the number." : res.error ? res.error.message : "Someone else just changed this person. Refresh the page and try again."; return; }
-  Object.assign(e, row, { updated_at: res.data[0].updated_at, verified_by_name: S.me.full_name || S.me.email });
+  Object.assign(e, row, { updated_at: res.data[0].updated_at, verified_by_name: S.me.full_name || S.me.email }); delete S.drafts[id];
   const card = btn.closest(".vrow"); card.classList.add("gone"); toast(`${e.name.split(" ")[0]} verified`);
   setTimeout(() => render(), 350);
 }
@@ -1137,7 +1138,7 @@ function filterBar(){
   const sel = (key, all, opts) => `<select aria-label="${all}" onchange="S.filters.${key}=this.value;S.page=1;render()"><option value="">${all}</option>${opts.map(([v,l]) => `<option value="${esc(v)}" ${f[key]===v?"selected":""}>${esc(l)}</option>`).join("")}</select>`;
   const vals = k => { const s = new Set(); let none = false; for (const e of S.emps) { const v = GROUPS[k][1](e); if (v) s.add(v); else none = true; } return [...[...s].sort().map(v => [v, v]), ...(none ? [["__none", "Not mapped"]] : [])]; };
   return `<div class="filters">
-    <input id="fq" type="search" placeholder="Search name, ID, Iqama or mobile…" value="${esc(f.q)}" oninput="S.filters.q=this.value;S.page=1;render()">
+    <input id="fq" type="search" placeholder="Search name, ID, Iqama or mobile…" value="${esc(f.q)}" oninput="later(()=>{S.filters.q=this.value;S.page=1;render()})">
     ${sts.length > 1 ? sel("store", "All stores & departments", sts.map(s => [s, s])) : ""}
     ${sel("status", "All statuses", [...Object.entries(STATUS_LABEL), ...(S.left.length ? [["left", `Left the company (${S.left.length})`]] : [])])}
     ${sel("cs", "All card statuses", [...new Set([...CARD_STATUSES, ...cardStatusList().map(x => x[0])])].map(s => [s, s]).concat([["__none", "No card status"]]))}
@@ -1182,6 +1183,7 @@ function hijriToG(txt){
 const HMONTHS = ["Muharram","Safar","Rabi al-Awwal","Rabi al-Thani","Jumada al-Ula","Jumada al-Akhirah","Rajab","Shaban","Ramadan","Shawwal","Dhul Qadah","Dhul Hijjah"];
 const WDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 // typing a Hijri date fills the normal date box next to it
+function hjText(v){ const g = hijriToG(v); if (!g) return ""; const [y, m, d] = hijriParts(v); return `${d} ${HMONTHS[m - 1]} ${y} = ${WDAYS[new Date(g).getUTCDay()]} ${fmtDate(g)}`; }
 function hijriInput(inp, dateId){
   const out = inp.parentElement.querySelector(".hj-out"), v = inp.value.trim(), g = v ? hijriToG(v) : "";
   if (!v) { out.textContent = ""; return; }
@@ -1190,7 +1192,11 @@ function hijriInput(inp, dateId){
   else { const p = hijriParts(v); out.className = "hj-out bad";
     out.textContent = !p ? "Type it like 1447-09-15 or 15/09/1447" : p[0] < UQ_Y0 || p[0] >= UQ_Y0 + UQ.length ? `Only years ${UQ_Y0}–${UQ_Y0 + UQ.length - 1} — check the year` : p[1] < 1 || p[1] > 12 ? "Month must be 1–12" : `${HMONTHS[p[1] - 1]} ${p[0]} has only ${uqLen(p[0], p[1])} days`; }
 }
-const hijriBox = (dateId, id) => `<span class="hj"><input type="text" ${id ? `id="${id}"` : ""} class="in-sm" inputmode="numeric" placeholder="Hijri, e.g. 1447-09-15" aria-label="Hijri date" oninput="hijriInput(this,'${dateId}')"><span class="hj-out"></span></span>`;
+const hijriBox = (dateId, id, val = "") => `<span class="hj"><input type="text" ${id ? `id="${id}"` : ""} class="in-sm" inputmode="numeric" placeholder="Hijri, e.g. 1447-09-15" aria-label="Hijri date" value="${esc(val)}" oninput="hijriInput(this,'${dateId}');if(this.id)keep(this)"><span class="hj-out ${val && hjText(val) ? "ok" : ""}">${val ? hjText(val) : ""}</span></span>`;
+// unsaved typing on Verify cards, kept until Confirm
+S.drafts = {};
+function keep(el){ const [f, ...rest] = el.id.split("-"), id = rest.join("-"); (S.drafts[id] ??= {})[f] = el.type === "checkbox" ? (el.checked ? "1" : "") : el.value; }
+const dr = (e, f, dflt) => { const d = S.drafts[e.id]; return d && f in d ? d[f] : (dflt || ""); };
 
 // ---------- workplaces ----------
 function placeOptions(curKind, curUnit){

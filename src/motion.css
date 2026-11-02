@@ -18,18 +18,17 @@
 
 /* ---- ambient background (slow, decorative, off for reduced motion) ---- */
 .ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-.ambient i{position:absolute;border-radius:50%;opacity:.7;will-change:transform}
-.ambient i:nth-child(1){width:46vmax;height:46vmax;left:-12vmax;top:-14vmax;background:radial-gradient(circle,rgba(212,179,139,.55),rgba(212,179,139,0) 68%);animation:drift1 28s var(--ease-in-out) infinite alternate}
-.ambient i:nth-child(2){width:40vmax;height:40vmax;right:-10vmax;top:18vh;background:radial-gradient(circle,rgba(132,198,178,.42),rgba(132,198,178,0) 66%);animation:drift2 34s var(--ease-in-out) infinite alternate}
-.ambient i:nth-child(3){width:36vmax;height:36vmax;left:28vw;bottom:-18vmax;background:radial-gradient(circle,rgba(169,135,95,.32),rgba(169,135,95,0) 66%);animation:drift3 40s var(--ease-in-out) infinite alternate}
+.ambient i{position:absolute;border-radius:50%;opacity:.7}
+.ambient i:nth-child(1){width:46vmax;height:46vmax;left:-12vmax;top:-14vmax;background:radial-gradient(circle,rgba(212,179,139,.55),rgba(212,179,139,0) 68%);}
+.ambient i:nth-child(2){width:40vmax;height:40vmax;right:-10vmax;top:18vh;background:radial-gradient(circle,rgba(132,198,178,.42),rgba(132,198,178,0) 66%);}
+.ambient i:nth-child(3){width:36vmax;height:36vmax;left:28vw;bottom:-18vmax;background:radial-gradient(circle,rgba(169,135,95,.32),rgba(169,135,95,0) 66%);}
 @keyframes drift1{to{transform:translate(9vmax,7vmax) scale(1.12)}}
 @keyframes drift2{to{transform:translate(-8vmax,-6vmax) scale(.9)}}
 @keyframes drift3{to{transform:translate(-6vmax,-9vmax) scale(1.15)}}
 #login,#noaccess,#shell,#modalRoot{position:relative;z-index:1}
 
 /* ---- glass surfaces ---- */
-.card{background:var(--glass);border:1px solid var(--glass-edge);
-  -webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);
+.card{background:rgba(252,248,242,.94);border:1px solid var(--glass-edge);
   transition:transform 200ms var(--ease-out),box-shadow 200ms var(--ease-out)}
 .kpi{position:relative;overflow:hidden;transition:transform 200ms var(--ease-out),box-shadow 200ms var(--ease-out)}
 .kpi::after{content:"";position:absolute;inset:0;background:radial-gradient(220px circle at var(--mx,50%) var(--my,0%),rgba(255,255,255,.7),transparent 60%);opacity:0;transition:opacity 200ms var(--ease-out);pointer-events:none}
@@ -41,7 +40,7 @@ th{background:rgba(251,246,239,.85)}
   animation:rise 300ms var(--ease-out) both}
 aside{background:var(--glass-dark);-webkit-backdrop-filter:blur(22px) saturate(160%);backdrop-filter:blur(22px) saturate(160%);border-right:1px solid rgba(255,255,255,.06)}
 .filters{position:sticky;top:10px;z-index:5;padding:10px;margin:0 -10px 14px;border-radius:16px;transition:background-color 200ms var(--ease-out),box-shadow 200ms var(--ease-out)}
-.filters.stuck{background:rgba(245,237,227,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 10px 30px -18px rgba(80,56,30,.4)}
+.filters.stuck{background:rgba(245,237,227,.96);box-shadow:0 10px 30px -18px rgba(80,56,30,.4)}
 input[type=text],input[type=email],input[type=password],input[type=date],input[type=search],select,textarea{
   background:rgba(255,255,255,.82);transition:border-color 150ms var(--ease-out),box-shadow 150ms var(--ease-out),background-color 150ms var(--ease-out)}
 input:focus,select:focus,textarea:focus{background:#fff}
@@ -65,7 +64,7 @@ nav > .ind{background:var(--tan);box-shadow:0 6px 18px -6px rgba(212,179,139,.6)
 /* ---- buttons ---- */
 .btn{position:relative;overflow:hidden;isolation:isolate;transition:transform 160ms var(--ease-out),box-shadow 200ms var(--ease-out),background-color 150ms var(--ease-out)}
 .btn:active:not(:disabled){transform:scale(.97)}
-.btn.ghost{background:rgba(255,255,255,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.btn.ghost{background:rgba(255,255,255,.62)}
 .btn.arrow::after{content:"→";display:inline-block;width:0;opacity:0;transform:translateX(-4px);transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
 .ripple{position:absolute;border-radius:50%;pointer-events:none;z-index:2;transform:scale(.15);opacity:.9;
   background:radial-gradient(circle,var(--rc,rgba(255,255,255,.55)) 0 30%,transparent 64%);
@@ -120,7 +119,7 @@ tbody tr td:first-child{box-shadow:inset 0 0 0 0 var(--tan);transition:box-shado
 .toast.show{opacity:1;transform:translate(-50%,0) scale(1)}
 
 /* ---- modal: centred, fast scale-in from .96 ---- */
-.modal-bg{background:rgba(17,17,17,.32);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);animation:fade 200ms var(--ease-out) both}
+.modal-bg{background:rgba(17,17,17,.45);animation:fade 200ms var(--ease-out) both}
 .modal{background:var(--glass-strong);border:1px solid var(--glass-edge);-webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%);
   box-shadow:0 30px 80px -30px rgba(40,28,15,.55);animation:pop 220ms var(--ease-out) both}
 @keyframes pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
@@ -134,10 +133,9 @@ tbody tr td:first-child{box-shadow:inset 0 0 0 0 var(--tan);transition:box-shado
 
 /* ---- phone ---- */
 @media (max-width:900px){
-  .mobile-top{background:var(--glass-dark);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%)}
-  .bottom-nav{background:var(--glass-dark);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);border-top:1px solid rgba(255,255,255,.06)}
+  .mobile-top{background:rgba(24,22,20,.97)}
+  .bottom-nav{background:rgba(24,22,20,.97);border-top:1px solid rgba(255,255,255,.06)}
   .filters{top:66px}
-  .card{-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
   .ambient i{opacity:.4}
   .toast{bottom:calc(84px + env(safe-area-inset-bottom))}
   .kpis.k5 > :last-child{grid-column:span 2}
