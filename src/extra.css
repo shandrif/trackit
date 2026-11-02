@@ -220,3 +220,8 @@ tr.unmapped td:first-child b{color:var(--red)}
 .balady-card{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px;border:1px solid var(--tan)}
 .balady-card .btn{white-space:nowrap}
 @media (max-width:760px){.balady-card{flex-direction:column;align-items:stretch}.balady-card .btn{text-align:center}}
+.req-card{border:1px solid var(--tan)}
+.req-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.req-row:first-of-type{border-top:0}
+.req-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:760px){.req-row{flex-direction:column;align-items:stretch}.req-btns{justify-content:flex-start}}

@@ -391,6 +391,11 @@ tr.unmapped td:first-child b{color:var(--red)}
 .balady-card{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px;border:1px solid var(--tan)}
 .balady-card .btn{white-space:nowrap}
 @media (max-width:760px){.balady-card{flex-direction:column;align-items:stretch}.balady-card .btn{text-align:center}}
+.req-card{border:1px solid var(--tan)}
+.req-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.req-row:first-of-type{border-top:0}
+.req-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:760px){.req-row{flex-direction:column;align-items:stretch}.req-btns{justify-content:flex-start}}
 /* ================= Trackit motion & glass layer =================
    Motion rules (after Emil Kowalski's animation standards):
    - UI motion < 300ms, strong ease-out, never ease-in, no bounce on a work dashboard
@@ -840,6 +845,7 @@ async function loadAll(){
   if (!al.error && Array.isArray(al.data)) { S.alias = {}; for (const x of al.data) S.alias[x.store] = x.code; }
   if (!mm.error) S.mapMeta = mm.data || null;
   mapCache = new Map();
+  await loadReqs();
   await loadAdmin();
 }
 async function loadAdmin(){
@@ -851,6 +857,38 @@ async function loadAdmin(){
     S.creds = {}; for (const c of cr || []) S.creds[c.profile_id] = c;
   }
 }
+// ---------- move requests between stores ----------
+async function loadReqs(){
+  const since = new Date(Date.now() - 7 * 86400000).toISOString();
+  const { data, error } = await sb.from("trackit_move_requests").select("*").or(`status.eq.pending,decided_at.gte.${since}`).order("requested_at", { ascending: false }).limit(300);
+  if (!error && Array.isArray(data)) S.reqs = data;
+}
+const canSeeUnit = (k, u) => { const sk = scopeKind(), v = S.me?.scope_value; if (sk === "all") return true; if (sk === "store") return k === "store" && u === v; if (sk === "dept") return k === "dept" && u === v; if (sk === "am") return k === "store" && S.map[u]?.area_manager === v; return false; };
+const myApproval = r => r.status === "pending" && (isAdmin() || (r.needs === "from" ? canSeeUnit(r.from_kind, r.from_unit) : canSeeUnit(r.to_kind, r.to_unit)));
+const reqLbl = (k, u) => k === "unassigned" ? "Unassigned" : placeLabel(k, u);
+function reqPanel(){
+  const all = S.reqs || [], mine = all.filter(myApproval), sent = all.filter(r => r.requested_by === S.me.id && !myApproval(r));
+  if (!mine.length && !sent.length) return "";
+  const who = r => `<b>${esc(r.staff_name)}</b>${r.staff_emp ? ` <span class="sub" style="display:inline">No. ${esc(r.staff_emp)}</span>` : ""}`;
+  const route = r => `${esc(reqLbl(r.from_kind, r.from_unit))} → ${esc(reqLbl(r.to_kind, r.to_unit))}`;
+  return `<div class="card pad section req-card">
+    ${mine.length ? `<h3>Waiting for your approval (${mine.length})</h3>
+      ${mine.map(r => `<div class="req-row"><div>${who(r)}<div class="sub">${route(r)} · asked by ${esc(r.requested_by_name)} · ${fmtTS(r.requested_at)}</div><div class="sub">${r.needs === "from" ? "They want this person to move to their store." : "They're sending this person to you."}</div></div>
+        <div class="req-btns"><button class="btn sm" onclick="decideReq('${r.id}','approve',this)">Approve</button><button class="btn sm ghost danger-t" onclick="decideReq('${r.id}','decline',this)">Decline</button></div></div>`).join("")}` : ""}
+    ${sent.length ? `<h3 ${mine.length ? 'style="margin-top:14px"' : ""}>Your move requests</h3>
+      ${sent.map(r => `<div class="req-row"><div>${who(r)}<div class="sub">${route(r)} · ${fmtTS(r.requested_at)}</div></div>
+        <div class="req-btns">${r.status === "pending" ? `<span class="pill p-due"><i></i>Waiting</span><button class="btn sm ghost" onclick="decideReq('${r.id}','cancel',this)">Cancel</button>` : `<span class="pill ${r.status === "approved" ? "p-ok" : "p-exp"}"><i></i>${r.status === "approved" ? "Approved" : r.status === "declined" ? "Declined" : "Cancelled"}</span>${r.decided_by_name ? `<span class="sub">by ${esc(r.decided_by_name)}</span>` : ""}`}</div></div>`).join("")}` : ""}
+  </div>`;
+}
+async function decideReq(id, action, btn){
+  btn.disabled = true;
+  const r = (S.reqs || []).find(x => x.id === id);
+  const { error } = await sb.rpc("trackit_decide_move", { p_req: id, p_action: action });
+  if (error) { btn.disabled = false; toast(error.message); await loadReqs(); return render(); }
+  toast(action === "approve" ? `Approved — ${r?.staff_name || "they"} moved to ${reqLbl(r?.to_kind, r?.to_unit)}` : action === "decline" ? "Declined" : "Request cancelled");
+  await loadReqs(); if (r) await refreshOne(r.staff_id); render();
+}
+
 // ---------- live updates: only the changed person travels, never the whole list ----------
 const byExpiry = (a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : (a.expiry || "0000") > (b.expiry || "0000") ? 1 : 0;
 function putRow(row, goneId){
@@ -874,6 +912,9 @@ function subscribe(){
     .on("postgres_changes", { event: "*", schema: "public", table: "trackit_staff" }, p => {
       pending.push(p);
       clearTimeout(reloadT); reloadT = setTimeout(() => { const ps = pending; pending = []; ps.forEach(applyChange); render(true); }, 400);
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "trackit_move_requests" }, () => {
+      clearTimeout(S.reqT); S.reqT = setTimeout(async () => { await loadReqs(); render(true); }, 400);
     }).subscribe(status => {
       const online = status === "SUBSCRIBED";
       document.body.classList.toggle("offline", !online);
@@ -935,6 +976,7 @@ function dashboard(){
   const vDone = c.total - c.unv;
   return header("Dashboard", `${scopeName() ? esc(scopeName()) + " · " : ""}${c.total.toLocaleString()} employees${nStores > 1 ? ` · ${nStores} stores` : ""}${nDept > 1 ? ` · ${nDept} departments` : ""}${S.left.length ? ` · ${S.left.length} marked as left` : ""}`,
     S.emps.length ? `<button class="btn ghost" onclick="printReport()">PDF report</button>` : "") + `
+  ${reqPanel()}
   <div class="card pad balady-card"><div><b>Check a health certificate</b><div class="sub" dir="rtl" lang="ar">الاستعلام عن الشهادة الصحية</div><p class="note" style="margin:4px 0 0">Open the Balady website, search with the employee's Iqama number, then confirm the expiry date on the Verify page.</p></div>${baladyBtn()}</div>
   ${c.total ? `<div class="card pad vprog-card" onclick="go('verify')" style="cursor:pointer"><div class="vprog-top"><b>Balady verification</b><span class="mono">${vDone.toLocaleString()} of ${c.total.toLocaleString()} verified</span></div>
     <div class="vbar"><i style="width:${Math.round(vDone / c.total * 100)}%"></i></div><p class="note" style="margin:6px 0 0">${c.unv ? `${c.unv.toLocaleString()} still to check on the Balady website. Alerts only count verified people.` : "Everyone is verified. Alerts are based on confirmed dates."}</p></div>` : ""}
@@ -973,7 +1015,8 @@ function verifyView(){
   return header("Verify on Balady", scopeName() ? esc(scopeName()) : "Check every person on the Balady website, then confirm", `${baladyBtn("btn tan")}<button class="btn ghost" onclick="findPerson()">Find a person</button>${k !== "am" ? `<button class="btn" onclick="editEmp()">+ Add</button>` : ""}`) + `
   <div class="card pad"><div class="vprog-top"><b>${done.toLocaleString()} of ${all.length.toLocaleString()} verified</b><span class="mono">${pct}%</span></div><div class="vbar"><i style="width:${pct}%"></i></div>
     <p class="note" style="margin:8px 0 0">For each person enter the <b>Iqama</b> and <b>mobile</b>, check them on the Balady website, enter the expiry date it shows (Gregorian or Hijri) and press <b>Confirm</b>. Only confirmed people count in alerts${DUE_DAYS ? ` (warning ${DUE_DAYS} days before expiry)` : ""}.
-    ${k === "store" || k === "dept" ? ` Someone here who isn't on your list? Use <b>Find a person</b>. Someone on your list who doesn't work here? Press <b>Not here</b>.` : ""}</p></div>
+    ${k === "store" || k === "dept" ? ` Someone here who isn't on your list? Use <b>Find a person</b> to request them — their current store approves the move. Someone on your list who doesn't work here? Press <b>Not here</b>.` : ""}</p></div>
+  ${reqPanel()}
   ${wide && nUn ? `<div class="warnbox section" style="cursor:pointer" onclick="S.vUnit='Unassigned';S.page=1;render()"><b>${nUn.toLocaleString()} people have no store or department yet.</b> Their store can claim them with Find a person, or ${isAdmin() ? "you can" : "an admin can"} set it with Edit.</div>` : ""}
   ${prog.length ? `<details class="card section map-sec" ${S.vUnit ? "" : "open"}><summary style="padding:14px 16px">Progress by store and department (${prog.length})</summary><div class="tbl-wrap"><table><thead><tr><th>Store / department</th><th>Staff</th><th>Verified</th><th class="hm">Left to check</th></tr></thead><tbody>
     ${prog.map(([p, t, v]) => `<tr style="cursor:pointer" data-p="${esc(p)}" onclick="S.vUnit=this.dataset.p;S.vTab='todo';S.page=1;render()"><td><b>${esc(p)}</b></td><td class="mono">${t}</td><td><div class="vbar sm"><i style="width:${Math.round(v / t * 100)}%"></i></div><span class="sub">${v} · ${Math.round(v / t * 100)}%</span></td><td class="mono hm">${t - v}</td></tr>`).join("")}
@@ -1057,15 +1100,18 @@ async function fpSearch(){
   if ($("#fpq")?.value.trim() !== q) return;
   if (error) { out.innerHTML = `<div class="err">${esc(error.message)}</div>`; return; }
   out.innerHTML = data.length ? data.map(p => `<div class="fp-row"><div><b>${esc(p.name)}</b><div class="sub">${[p.employee_id && "No. " + esc(p.employee_id), p.id_last4 && "ID …" + esc(p.id_last4), p.job_role && esc(p.job_role)].filter(Boolean).join(" · ")}</div><div class="sub">Now: <b>${esc(p.place)}</b></div></div>
-    <button class="btn sm" onclick="fpMove('${p.id}', this)">Move here</button></div>`).join("") : `<p class="note">Nobody found. Check the spelling, or add them with <b>+ Add</b>.</p>`;
+    <button class="btn sm" onclick="fpMove('${p.id}', this)">${p.unit_kind === "unassigned" || isAdmin() ? "Move here" : "Request move"}</button></div>`).join("") : `<p class="note">Nobody found. Check the spelling, or add them with <b>+ Add</b>.</p>`;
 }
 async function fpMove(id, btn){
   const v = ($("#fpTo")?.value) || targets()[0][0], [k, u] = v.split("|");
   btn.disabled = true; btn.textContent = "Moving…";
-  const { data, error } = await sb.rpc("trackit_move_staff", { p_id: id, p_kind: k, p_unit: u || "" });
-  if (error) { btn.disabled = false; btn.textContent = "Move here"; return toast(error.message === "Not allowed" ? "You can't move this person there" : error.message); }
-  btn.textContent = data === "unchanged" ? "Already here" : "Moved ✓"; toast(data === "unchanged" ? "Already there" : `Moved to ${placeLabel(k, u)} — verify them now`);
-  await refreshOne(id); if (S.view === "verify" || S.view === "employees") render();
+  const label = btn.textContent;
+  const { data, error } = await sb.rpc("trackit_request_move", { p_id: id, p_kind: k, p_unit: u || "" });
+  if (error) { btn.disabled = false; btn.textContent = label; return toast(error.message === "Not allowed" ? "You can't move this person there" : error.message); }
+  btn.textContent = data === "unchanged" ? "Already here" : data === "requested" ? "Requested ✓" : "Moved ✓";
+  toast(data === "unchanged" ? "Already there" : data === "requested" ? "Request sent — their current store must approve it" : `Moved to ${placeLabel(k, u)} — verify them now`);
+  if (data === "requested") await loadReqs(); else await refreshOne(id);
+  if (S.view === "verify" || S.view === "employees" || S.view === "dashboard") render();
 }
 
 // ---------- employees ----------
@@ -1178,7 +1224,7 @@ function editEmp(id){
       ${!e.expiry && e.expiry_note ? `<p class="note">File said: <b>${esc(e.expiry_note)}</b>. Enter the real date when you have it.</p>` : ""}
       ${id ? `<label>Card photo</label><div id="photoArea">${photoArea(e)}</div>` : ""}
       <label>Works at</label><select name="place">${placeOptions(e.unit_kind || "unassigned", e.unit)}</select>
-      ${id ? `<p class="note" style="margin-top:4px">Changing this moves the person to that store or department. They'll need to be verified again there.</p>` : ""}
+      ${id ? `<p class="note" style="margin-top:4px">Changing this sends a move request — the other store or department must accept it. They'll need to be verified again there.</p>` : ""}
       <div class="row2"><div><label>Name</label><input type="text" name="name" required value="${esc(e.name)}"></div>
       <div><label>Job role</label><input type="text" name="job_role" value="${esc(e.job_role)}"></div></div>
       <div class="row2"><div><label>Employee No. <span class="sub">(optional)</span></label><input type="text" name="employee_id" value="${esc(eid(e))}"></div>
@@ -1217,10 +1263,12 @@ function editEmp(id){
     } catch (err) { res = { error: { message: loginError(err) } }; }
     let { error, data } = res || {};
     if (!error && id && Array.isArray(data) && data.length === 0) { btn.disabled = false; btn.textContent = label; $("#eerr").innerHTML = `Someone else just changed this person. <button type="button" class="linkbtn" onclick="closeModal();loadAll().then(()=>{render();editEmp('${e.id}')})">Open the latest version</button> and make your change again.`; return; }
-    if (!error && moving) ({ error } = await sb.rpc("trackit_move_staff", { p_id: id, p_kind: pk, p_unit: pu || "" }));
+    let moveRes = null;
+    if (!error && moving) ({ data: moveRes, error } = await sb.rpc("trackit_request_move", { p_id: id, p_kind: pk, p_unit: pu || "" }));
     btn.disabled = false; btn.textContent = label;
     if (error) { $("#eerr").textContent = error.code === "23505" ? "That Employee No. or Iqama is already in Trackit — use Find a person on the Verify page to move them to you." : error.code === "42501" || /row-level security/i.test(error.message) ? "You can only add people to your own store or department." : /JWT|token/i.test(error.message) ? "Your login has expired. Sign in again." : error.message; return; }
-    closeModal(); toast(moving ? `Moved to ${placeLabel(pk, pu)}` : id ? "Saved" : "Employee added"); if (id) await refreshOne(id); else await loadAll(); render();
+    closeModal(); toast(moving ? (moveRes === "requested" ? `Saved — ${placeLabel(pk, pu)} must accept the move` : `Moved to ${placeLabel(pk, pu)}`) : id ? "Saved" : "Employee added");
+    if (moveRes === "requested") await loadReqs(); if (id) await refreshOne(id); else await loadAll(); render();
   };
 }
 const fmtTS = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" }); };
