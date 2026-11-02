@@ -356,7 +356,7 @@ function verifyView(){
   const nUn = all.filter(e => e.unit_kind === "unassigned").length;
   return header("Verify on Balady", scopeName() ? esc(scopeName()) : "Check every person on the Balady website, then confirm", `${baladyBtn("btn tan")}<button class="btn ghost" onclick="findPerson()">Find a person</button>${k !== "am" ? `<button class="btn" onclick="editEmp()">+ Add</button>` : ""}`) + `
   <div class="card pad"><div class="vprog-top"><b>${done.toLocaleString()} of ${all.length.toLocaleString()} verified</b><span class="mono">${pct}%</span></div><div class="vbar"><i style="width:${pct}%"></i></div>
-    <p class="note" style="margin:8px 0 0">Open each person on the Balady website, enter the expiry date it shows (Gregorian or Hijri) and press <b>Confirm</b>. Only confirmed people count in alerts${DUE_DAYS ? ` (warning ${DUE_DAYS} days before expiry)` : ""}.
+    <p class="note" style="margin:8px 0 0">For each person enter the <b>Iqama</b> and <b>mobile</b>, check them on the Balady website, enter the expiry date it shows (Gregorian or Hijri) and press <b>Confirm</b>. Only confirmed people count in alerts${DUE_DAYS ? ` (warning ${DUE_DAYS} days before expiry)` : ""}.
     ${k === "store" || k === "dept" ? ` Someone here who isn't on your list? Use <b>Find a person</b>. Someone on your list who doesn't work here? Press <b>Not here</b>.` : ""}</p></div>
   ${wide && nUn ? `<div class="warnbox section" style="cursor:pointer" onclick="S.vUnit='Unassigned';S.page=1;render()"><b>${nUn.toLocaleString()} people have no store or department yet.</b> Their store can claim them with Find a person, or ${isAdmin() ? "you can" : "an admin can"} set it with Edit.</div>` : ""}
   ${prog.length ? `<details class="card section map-sec" ${S.vUnit ? "" : "open"}><summary style="padding:14px 16px">Progress by store and department (${prog.length})</summary><div class="tbl-wrap"><table><thead><tr><th>Store / department</th><th>Staff</th><th>Verified</th><th class="hm">Left to check</th></tr></thead><tbody>
@@ -375,10 +375,12 @@ function vRow(e){
   const k = scopeKind();
   return `<div class="card vrow" data-id="${e.id}">
     <div class="vwho"><b>${esc(e.name)}</b><div class="sub">${whoLine(e)}</div>
-      ${e.iqama ? `<div class="vid"><span class="mono">${esc(e.iqama)}</span><button type="button" class="linkbtn" onclick="copyTxt('${esc(e.iqama)}')">Copy ID</button></div>` : `<div class="sub" style="color:var(--red)">No Iqama / ID number — add it with Edit</div>`}
+      ${e.iqama ? `<div class="vid"><span class="mono">${esc(e.iqama)}</span><button type="button" class="linkbtn" onclick="copyTxt('${esc(e.iqama)}')">Copy ID</button></div>` : ""}
       <div class="sub">In the file: ${e.expiry ? `<b>${fmtDate(e.expiry)}</b>` : `<b>${esc(e.expiry_note || "no date")}</b>`}${e.card_status ? ` · ${esc(e.card_status)}` : ""}</div>
       ${e.check_note ? `<div class="vcheck">${esc(e.check_note)}</div>` : ""}</div>
     <div class="vform">
+      <div class="vin"><label>Iqama / National ID</label><input type="text" id="vi-${e.id}" inputmode="numeric" maxlength="10" value="${esc(e.iqama || "")}" placeholder="10 digits"></div>
+      <div class="vin"><label>Mobile</label><input type="text" id="vm-${e.id}" inputmode="tel" maxlength="14" value="${esc(e.mobile || "")}" placeholder="5XXXXXXXX"></div>
       <div class="vin"><label>Expiry on Balady</label><input type="date" id="vd-${e.id}" value="${esc(e.expiry || "")}"></div>
       <div class="vin"><label>or Hijri</label>${hijriBox(`vd-${e.id}`)}</div>
       <label class="chk sm"><input type="checkbox" id="vn-${e.id}" onchange="if(this.checked)$('#vd-${e.id}').value=''"> Not on Balady / no card</label>
@@ -395,12 +397,15 @@ function copyTxt(t){ try { navigator.clipboard.writeText(t).then(() => toast("ID
 async function vConfirm(id, btn){
   const e = findEmp(id); if (!e || btn.disabled) return;
   const d = $(`#vd-${id}`).value, none = $(`#vn-${id}`).checked, er = $(`#ve-${id}`); er.textContent = "";
+  const iq = $(`#vi-${id}`).value.replace(/[٠-٩]/g, x => "٠١٢٣٤٥٦٧٨٩".indexOf(x)).replace(/\D/g, ""), mob = normMobile($(`#vm-${id}`).value.replace(/[٠-٩]/g, x => "٠١٢٣٤٥٦٧٨٩".indexOf(x)));
+  if (!/^[12]\d{9}$/.test(iq)) { er.textContent = "Iqama / National ID must be 10 digits, starting with 1 or 2."; $(`#vi-${id}`).focus(); return; }
+  if (!/^5\d{8}$/.test(mob)) { er.textContent = "Mobile must be 9 digits starting with 5 (e.g. 5XXXXXXXX)."; $(`#vm-${id}`).focus(); return; }
   if (!d && !none) { er.textContent = "Enter the expiry date from Balady, or tick “Not on Balady”."; return; }
   if (d && (d < "2015-01-01" || d > "2040-12-31")) { er.textContent = "That date doesn't look right. Check the year."; return; }
   btn.disabled = true; btn.textContent = "Saving…";
-  const row = { expiry: none ? null : d, expiry_note: none ? "Not on Balady" : "", verified_at: new Date().toISOString() };
+  const row = { iqama: iq, mobile: mob, expiry: none ? null : d, expiry_note: none ? "Not on Balady" : "", verified_at: new Date().toISOString() };
   let res; try { res = await sb.from("trackit_staff").update(row).eq("id", id).eq("updated_at", e.updated_at).select("id,updated_at"); } catch (err) { res = { error: { message: loginError(err) } }; }
-  if (res.error || !res.data?.length) { btn.disabled = false; btn.textContent = "Confirm"; er.textContent = res.error ? res.error.message : "Someone else just changed this person. Refresh the page and try again."; return; }
+  if (res.error || !res.data?.length) { btn.disabled = false; btn.textContent = "Confirm"; er.textContent = res.error?.code === "23505" ? "This Iqama number is already used by another employee in Trackit. Check the number." : res.error ? res.error.message : "Someone else just changed this person. Refresh the page and try again."; return; }
   Object.assign(e, row, { updated_at: res.data[0].updated_at, verified_by_name: S.me.full_name || S.me.email });
   const card = btn.closest(".vrow"); card.classList.add("gone"); toast(`${e.name.split(" ")[0]} verified`);
   setTimeout(() => render(), 350);
@@ -492,24 +497,36 @@ function employees(){
   : `<div class="empty">${S.emps.length ? "No employees match these filters." : "No employees yet. Use <a href='#import'>Import</a> to upload this week's file."}</div>`}</div>`;
 }
 // ---------- Hijri (Umm al-Qura) → Gregorian ----------
-const HFMT = (() => { try { return new Intl.DateTimeFormat("en-u-ca-islamic-umalqura-nu-latn", { timeZone:"UTC", year:"numeric", month:"numeric", day:"numeric" }); } catch (e) { return null; } })();
-function hijriOf(ms){ const p = {}; for (const x of HFMT.formatToParts(new Date(ms))) p[x.type] = x.value; return [parseInt(p.year, 10), +p.month, +p.day]; }
-function hijriToG(txt){
-  const m = String(txt || "").trim().replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).match(/^(\d{1,4})\D+(\d{1,2})\D+(\d{1,4})$/);
-  if (!m || !HFMT) return "";
-  const a = +m[1], b = +m[2], c = +m[3]; let y, mo, d;
-  if (a > 1000) [y, mo, d] = [a, b, c]; else if (c > 1000) [y, mo, d] = [c, b, a]; else return "";
-  if (y < 1400 || y > 1500 || mo < 1 || mo > 12 || d < 1 || d > 30) return "";
-  const approx = Date.UTC(622, 6, 19) + ((y - 1) * 354.36707 + (mo - 1) * 29.530589 + (d - 1)) * 86400000;
-  for (let k = -25; k <= 25; k++) { const t = approx + k * 86400000, [hy, hm, hd] = hijriOf(t); if (hy === y && hm === mo && hd === d) return new Date(t).toISOString().slice(0, 10); }
-  return "";
+// Official Umm al-Qura calendar, built in so every phone and PC converts exactly the same way.
+// One number per Hijri year from 1440: its 12 bits say which months have 30 days (first bit = Muharram).
+const UQ_Y0 = 1440, UQ_START = Date.UTC(2018, 8, 11);   // 1 Muharram 1440 = 11 Sep 2018
+const UQ = [1492, 2778, 1370, 2731, 1429, 1865, 1892, 2986, 1461, 694, 2646, 3370, 3733, 1834, 1877, 858, 2397, 1179, 2637, 3366, 3411];
+const uqLen = (y, m) => 29 + ((UQ[y - UQ_Y0] >> (12 - m)) & 1);
+function hijriParts(txt){
+  const m = String(txt || "").trim().replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).match(/^(\d{1,4})\D+(\d{1,2})\D+(\d{1,4})$/);
+  if (!m) return null;
+  const a = +m[1], b = +m[2], c = +m[3];
+  return a > 1000 ? [a, b, c] : c > 1000 ? [c, b, a] : null;
 }
+function hijriToG(txt){
+  const p = hijriParts(txt); if (!p) return "";
+  const [y, mo, d] = p;
+  if (y < UQ_Y0 || y >= UQ_Y0 + UQ.length || mo < 1 || mo > 12 || d < 1 || d > uqLen(y, mo)) return "";
+  let days = d - 1;
+  for (let yy = UQ_Y0; yy < y; yy++) for (let mm = 1; mm <= 12; mm++) days += uqLen(yy, mm);
+  for (let mm = 1; mm < mo; mm++) days += uqLen(y, mm);
+  return new Date(UQ_START + days * 86400000).toISOString().slice(0, 10);
+}
+const HMONTHS = ["Muharram","Safar","Rabi al-Awwal","Rabi al-Thani","Jumada al-Ula","Jumada al-Akhirah","Rajab","Shaban","Ramadan","Shawwal","Dhul Qadah","Dhul Hijjah"];
+const WDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 // typing a Hijri date fills the normal date box next to it
 function hijriInput(inp, dateId){
   const out = inp.parentElement.querySelector(".hj-out"), v = inp.value.trim(), g = v ? hijriToG(v) : "";
   if (!v) { out.textContent = ""; return; }
-  if (g) { const di = document.getElementById(dateId); if (di) { di.value = g; di.dispatchEvent(new Event("change", { bubbles: true })); } out.textContent = "= " + fmtDate(g); out.className = "hj-out ok"; }
-  else { out.textContent = HFMT ? "Type it like 1447-09-15 or 15/09/1447" : "This browser can't convert Hijri dates"; out.className = "hj-out bad"; }
+  if (g) { const di = document.getElementById(dateId); if (di) { di.value = g; di.dispatchEvent(new Event("change", { bubbles: true })); }
+    const [y, m, d] = hijriParts(v); out.textContent = `${d} ${HMONTHS[m - 1]} ${y} = ${WDAYS[new Date(g).getUTCDay()]} ${fmtDate(g)}`; out.className = "hj-out ok"; }
+  else { const p = hijriParts(v); out.className = "hj-out bad";
+    out.textContent = !p ? "Type it like 1447-09-15 or 15/09/1447" : p[0] < UQ_Y0 || p[0] >= UQ_Y0 + UQ.length ? `Only years ${UQ_Y0}–${UQ_Y0 + UQ.length - 1} — check the year` : p[1] < 1 || p[1] > 12 ? "Month must be 1–12" : `${HMONTHS[p[1] - 1]} ${p[0]} has only ${uqLen(p[0], p[1])} days`; }
 }
 const hijriBox = (dateId, id) => `<span class="hj"><input type="text" ${id ? `id="${id}"` : ""} class="in-sm" inputmode="numeric" placeholder="Hijri, e.g. 1447-09-15" aria-label="Hijri date" oninput="hijriInput(this,'${dateId}')"><span class="hj-out"></span></span>`;
 
