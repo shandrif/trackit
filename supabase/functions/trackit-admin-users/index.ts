@@ -52,14 +52,20 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    // one login per store or department; the starting password is kept so the admin can download the list
     if (action === "bulk_create") {
       const items = Array.isArray(body.items) ? body.items.slice(0, 25) : [];
       const results = [];
       for (const it of items) {
-        const acc = await checkAccess({ role: "manager", scope_kind: "store", scope_value: it.code });
-        if (typeof acc === "string") { results.push({ code: it.code, ok: false, error: acc }); continue; }
+        const kind = it.kind === "dept" ? "dept" : "store", value = String(it.value ?? it.code ?? "");
+        const acc = await checkAccess({ role: "manager", scope_kind: kind, scope_value: value });
+        if (typeof acc === "string") { results.push({ value, ok: false, error: acc }); continue; }
         const err = await createOne(it, acc);
-        results.push(err ? { code: it.code, ok: false, error: err } : { code: it.code, ok: true });
+        if (!err) {
+          const { data: p } = await service.from("trackit_profiles").select("id").eq("email", String(it.email).trim().toLowerCase()).maybeSingle();
+          if (p) await service.from("trackit_login_creds").upsert({ profile_id: p.id, login: String(it.email).trim().toLowerCase(), password: String(it.password), updated_at: new Date().toISOString() });
+        }
+        results.push(err ? { value, ok: false, error: err } : { value, ok: true });
       }
       return json({ ok: true, results });
     }
@@ -80,6 +86,8 @@ Deno.serve(async (req) => {
       if (!p) return json({ error: "Login not found" }, 404);
       const { error } = await service.auth.admin.updateUserById(body.id, { password });
       if (error) return json({ error: error.message }, 400);
+      // keep the downloadable login list correct for store / department logins
+      await service.from("trackit_login_creds").update({ password, updated_at: new Date().toISOString() }).eq("profile_id", body.id);
       return json({ ok: true });
     }
 

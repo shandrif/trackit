@@ -842,6 +842,8 @@ async function loadAdmin(){
     const [{ data }, { data: st }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
       sb.from("trackit_settings").select("email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result").eq("id", 1).maybeSingle()]);
     S.profiles = data || []; S.settings = st;
+    const { data: cr } = await sb.from("trackit_login_creds").select("profile_id,login,password");
+    S.creds = {}; for (const c of cr || []) S.creds[c.profile_id] = c;
   }
 }
 // ---------- live updates: only the changed person travels, never the whole list ----------
@@ -1635,8 +1637,8 @@ async function adminCall(body){
 }
 const accessTxt = p => p.role === "admin" ? "Admin — everything" : p.scope_kind === "store" ? `Store: ${S.map[p.scope_value]?.branch || p.scope_value} (${p.scope_value})` : p.scope_kind === "dept" ? `Department: ${p.scope_value}` : p.scope_kind === "am" ? `Area manager: ${p.scope_value}` : "All employees";
 function loginsView(){
-  const noLogin = Object.values(S.map).filter(m => !S.profiles.some(p => p.scope_kind === "store" && p.scope_value === m.code)).length;
-  return header("Users", "Each login sees only its own store, department or area. Admins see everything.", `${noLogin ? `<button class="btn ghost" onclick="bulkLogins()">Create store logins</button>` : ""}<button class="btn" onclick="addLogin()">+ Add user</button>`) + `
+  const noLogin = unitsWithoutLogin().length, nCreds = Object.keys(S.creds || {}).length;
+  return header("Users", "Each login sees only its own store, department or area. Admins see everything.", `${noLogin ? `<button class="btn ghost" onclick="bulkLogins()">Create ${noLogin} store & department logins</button>` : ""}${nCreds ? `<button class="btn ghost" onclick="downloadLogins()">Download logins (Excel)</button>` : ""}<button class="btn" onclick="addLogin()">+ Add user</button>`) + `
   <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th class="hm">Email</th><th>Sees</th><th></th></tr></thead><tbody>
   ${S.profiles.map(p => `<tr><td><b>${esc(p.full_name || p.email)}</b><div class="sub sm-only">${esc(p.email)}</div></td><td class="hm">${esc(p.email)}</td><td>${esc(accessTxt(p))}${p.role !== "admin" ? ` <button class="linkbtn" onclick="setAccess('${p.id}')">Change</button>` : ""}</td>
     <td style="text-align:right;white-space:nowrap"><button class="btn sm ghost" onclick="resetPw('${p.id}')">${ICON.key}<span class="hm">Reset password</span></button>${p.id !== S.me.id ? `<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delLogin('${p.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
@@ -1770,48 +1772,57 @@ function setAccess(id){
 }
 // one login per store, with a printable list of passwords
 const genPw = () => { const c = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", a = new Uint32Array(10); crypto.getRandomValues(a); return [...a].map(x => c[x % c.length]).join(""); };
+// every store and department that has staff gets one login
+const slug = t => String(t).toLowerCase().replace(/&/g, " ").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+function unitsWithoutLogin(){
+  const has = (k, v) => S.profiles.some(p => p.role !== "admin" && p.scope_kind === k && p.scope_value === v);
+  const st = [...new Set(S.emps.filter(e => e.unit_kind === "store").map(e => e.unit))].filter(c => S.map[c] && !has("store", c)).sort((x, y) => x.localeCompare(y, undefined, { numeric: true }))
+    .map(c => ({ kind: "store", value: c, full_name: `${S.map[c].branch} (${c})` }));
+  const dp = S.depts.filter(d => S.emps.some(e => e.unit_kind === "dept" && e.unit === d) && !has("dept", d)).map(d => ({ kind: "dept", value: d, full_name: d }));
+  return [...st, ...dp];
+}
 function bulkLogins(){
-  const todo = Object.values(S.map).filter(m => !S.profiles.some(p => p.scope_kind === "store" && p.scope_value === m.code)).sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true }));
-  modal(`<h3>Create store logins</h3><p class="note" style="margin-top:-6px">One login for each of the <b>${todo.length}</b> stores that don't have one yet. Each store sees only its own staff. Passwords are made up at random and shown <b>once</b> — print or save the list straight away.</p>
+  const todo = unitsWithoutLogin(); if (!todo.length) return;
+  const nS = todo.filter(t => t.kind === "store").length, nD = todo.length - nS;
+  modal(`<h3>Create logins</h3><p class="note" style="margin-top:-6px">One login for each of <b>${nS} stores</b>${nD ? ` and <b>${nD} departments</b>` : ""} that have staff and no login yet. Each one sees only its own staff. Passwords are made up at random and kept here so you can <b>Download logins (Excel)</b> any time to share them.</p>
     <form id="bf"><label>Email ending</label><input type="text" name="domain" value="trackit.halfm.sa" required>
-    <p class="note">Logins look like <b class="mono">${esc(todo[0]?.code.toLowerCase() || "b05")}@trackit.halfm.sa</b>. No emails are sent to these addresses.</p>
+    <p class="note">Logins look like <b class="mono">${esc(todo[0].kind === "store" ? todo[0].value.toLowerCase() : slug(todo[0].value))}@trackit.halfm.sa</b>. No emails are sent to these addresses.</p>
     <div class="err" id="berr"></div><div id="bprog"></div>
     <div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" id="bbtn">Create ${todo.length} logins</button></div></form>`);
   $("#bf").onsubmit = async ev => {
     ev.preventDefault(); const dom = new FormData(ev.target).get("domain").trim().replace(/^@/, "").toLowerCase();
     if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(dom)) return $("#berr").textContent = "Enter an email ending like trackit.halfm.sa";
-    $("#bbtn").disabled = true; const made = [], fails = [];
+    $("#bbtn").disabled = true; let made = 0; const fails = [];
     for (let i = 0; i < todo.length; i += 20) {
       $("#bprog").innerHTML = `<p class="note">Creating ${Math.min(i + 20, todo.length)} of ${todo.length}…</p>`;
-      const items = todo.slice(i, i + 20).map(m => ({ code: m.code, full_name: `${m.branch} (${m.code})`, email: `${m.code.toLowerCase()}@${dom}`, password: genPw() }));
+      const items = todo.slice(i, i + 20).map(t => ({ ...t, email: `${t.kind === "store" ? t.value.toLowerCase() : slug(t.value)}@${dom}`, password: genPw() }));
       const { data, error } = await sb.functions.invoke("trackit-admin-users", { body: { action: "bulk_create", items } });
-      if (error || !data?.results) { fails.push(...items.map(x => [x.code, data?.error || error?.message || "failed"])); continue; }
-      for (const r of data.results) { const it = items.find(x => x.code === r.code); if (r.ok) made.push(it); else fails.push([r.code, r.error]); }
+      if (error || !data?.results) { fails.push(...items.map(x => [x.full_name, data?.error || error?.message || "failed"])); continue; }
+      for (const r of data.results) { if (r.ok) made++; else fails.push([items.find(x => x.value === r.value)?.full_name || r.value, r.error]); }
     }
-    await loadAdmin(); render(); printLogins(made, fails);
+    await loadAdmin(); render();
+    modal(`<h3>${made} logins created</h3><p class="note">Use <b>Download logins (Excel)</b> on the Users page whenever you need to share them.</p>
+      ${fails.length ? `<div class="errlist">${fails.map(([c, e]) => `<div>${esc(c)}: ${esc(e)}</div>`).join("")}</div>` : ""}
+      <div class="actions">${made ? `<button class="btn ghost" onclick="downloadLogins()">Download logins (Excel)</button>` : ""}<button class="btn" onclick="closeModal()">Done</button></div>`);
   };
 }
-function printLogins(made, fails){
-  modal(`<h3>${made.length} store logins created</h3>
-    ${made.length ? `<p class="note">Print or save this now — the passwords are not stored anywhere you can see again (you can still reset any of them).</p>
-    <div class="tbl-wrap" id="loginList"><table><thead><tr><th>Store</th><th>Email</th><th>Password</th></tr></thead><tbody>${made.map(m => `<tr><td>${esc(m.full_name)}</td><td class="mono">${esc(m.email)}</td><td class="mono">${esc(m.password)}</td></tr>`).join("")}</tbody></table></div>` : ""}
-    ${fails.length ? `<div class="errlist">${fails.map(([c, e]) => `<div>${esc(c)}: ${esc(e)}</div>`).join("")}</div>` : ""}
-    <div class="actions">${made.length ? `<button class="btn ghost" onclick="downloadCSV('trackit-store-logins.csv', [['Store','Email','Password'], ...S.lastLogins.map(m => [m.full_name, m.email, m.password])])">Download list</button><button class="btn ghost" onclick="printList()">Print</button>` : ""}<button class="btn" onclick="S.lastLogins=null;closeModal()">Done</button></div>`, true);
-  S.lastLogins = made;
-}
-function printList(){
-  document.getElementById("report")?.remove();
-  const r = document.createElement("div"); r.id = "report";
-  r.innerHTML = `<div class="r-head"><div class="r-brand"><img src="icon.svg" alt=""><div><b>Trackit</b><span>Store logins — keep private</span></div></div><div class="r-date">${new Date().toLocaleDateString("en-GB")}</div></div>${$("#loginList").innerHTML}`;
-  document.body.appendChild(r); document.body.classList.add("printing");
-  const done = () => { document.body.classList.remove("printing"); r.remove(); window.removeEventListener("afterprint", done); };
-  window.addEventListener("afterprint", done); setTimeout(() => window.print(), 150);
+async function downloadLogins(){
+  try { await needXLSX(); } catch (e) { return toast(e.message); }
+  const rows = S.profiles.filter(p => S.creds?.[p.id]).map(p => {
+    const c = S.creds[p.id], m = p.scope_kind === "store" ? S.map[p.scope_value] : null;
+    return [p.scope_kind === "store" ? "Store" : p.scope_kind === "dept" ? "Department" : "Other", p.scope_kind === "store" ? (m?.branch || p.scope_value) : p.scope_value, p.scope_kind === "store" ? p.scope_value : "", m?.area_manager || "", m?.city || "", c.login, c.password];
+  }).sort((x, y) => x[0].localeCompare(y[0]) || x[1].localeCompare(y[1]));
+  const link = location.origin + location.pathname;
+  const ws = XLSX.utils.aoa_to_sheet([["Type", "Store / Department", "Code", "Area manager", "City", "Login email", "Password", "Website"], ...rows.map(r => [...r, link])]);
+  ws["!cols"] = [12, 34, 8, 24, 14, 34, 14, 40].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Logins");
+  XLSX.writeFile(wb, `trackit-logins-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 function resetPw(id){
   const m = S.profiles.find(x => x.id === id);
   modal(`<h3>Reset password</h3><p class="note">For ${esc(m.full_name || m.email)}</p><form id="rf"><label>New password (min 8 characters)</label><input type="text" name="password" required minlength="8" autocomplete="off">
   <div class="err" id="rerr"></div><div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn">Save password</button></div></form>`);
-  $("#rf").onsubmit = async ev => { ev.preventDefault(); const err = await adminCall({ action:"reset_password", id, password: new FormData(ev.target).get("password") }); if (err) return $("#rerr").textContent = err; closeModal(); toast("Password updated"); };
+  $("#rf").onsubmit = async ev => { ev.preventDefault(); const err = await adminCall({ action:"reset_password", id, password: new FormData(ev.target).get("password") }); if (err) return $("#rerr").textContent = err; closeModal(); toast("Password updated"); await loadAdmin(); };
 }
 function delLogin(id){
   const m = S.profiles.find(x => x.id === id);
