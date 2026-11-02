@@ -287,7 +287,9 @@ const header = (t, p, extra="") => `<div class="top"><div><h2>${t}</h2><p>${p}</
 
 // ---------- dashboard ----------
 function counts(list){ const c = { unv:0, exp:0, due:0, miss:0, ok:0, total:list.length }; for (const e of list) c[statusOf(e)]++; return c; }
+const oneUnit = () => scopeKind() === "store" || scopeKind() === "dept";   // a store or department login only ever sees its own people
 function groupSwitch(){
+  if (oneUnit()) return "";
   if (!hasMap()) return groupTable("By store / department", "Store / department", groupRows(placeOf), "store");
   const g = GROUPS[S.groupBy] || GROUPS.store;
   return `<div class="grp-seg" role="tablist" aria-label="Group by">${Object.entries(GROUPS).map(([k, [l]]) => `<button role="tab" class="${S.groupBy === k ? "on" : ""}" aria-selected="${S.groupBy === k}" onclick="S.groupBy='${k}';render()">${l}</button>`).join("")}</div>` +
@@ -469,7 +471,7 @@ function filterBar(){
     ${sts.length > 1 ? sel("store", "All stores & departments", sts.map(s => [s, s])) : ""}
     ${sel("status", "All statuses", [...Object.entries(STATUS_LABEL), ...(S.left.length ? [["left", `Left the company (${S.left.length})`]] : [])])}
     ${sel("cs", "All card statuses", [...new Set([...CARD_STATUSES, ...cardStatusList().map(x => x[0])])].map(s => [s, s]).concat([["__none", "No card status"]]))}
-    ${hasMap() ? `<button type="button" class="btn sm ghost more-f-btn" onclick="S.moreF=!S.moreF;render()">${S.moreF ? "Fewer filters" : `More filters${["region","city","am","rom"].some(k => f[k]) || S.sortBy !== "expiry" ? " •" : ""}`}</button>
+    ${hasMap() && !oneUnit() ? `<button type="button" class="btn sm ghost more-f-btn" onclick="S.moreF=!S.moreF;render()">${S.moreF ? "Fewer filters" : `More filters${["region","city","am","rom"].some(k => f[k]) || S.sortBy !== "expiry" ? " •" : ""}`}</button>
     <span class="xf ${S.moreF ? "open" : ""}">${sel("region", "All regions", vals("region"))}${sel("city", "All cities", vals("city"))}${sel("am", "All area managers", vals("am"))}${sel("rom", "All ROMs", vals("rom"))}
     <select aria-label="Sort by" onchange="S.sortBy=this.value;S.page=1;render()">${[["expiry","Sort: expiry date"],["name","Sort: name"],["store","Sort: store / department"],["am","Sort: area manager"],["rom","Sort: ROM"],["city","Sort: city"],["region","Sort: region"]].map(([v,l]) => `<option value="${v}" ${S.sortBy===v?"selected":""}>${l}</option>`).join("")}</select></span>` : ""}
     ${Object.entries(f).some(([k, v]) => v && k !== "q") ? `<button class="btn sm ghost" onclick="S.filters={q:S.filters.q,store:'',status:'',cs:'',am:'',rom:'',city:'',region:''};S.page=1;render()">Clear filters</button>` : ""}
