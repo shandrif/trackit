@@ -628,29 +628,11 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const DUE_DAYS = 45;
 // Health-certificate websites: Riyadh city uses Amanat Al-Riyadh, everywhere else uses Balady
 const BALADY = {
-  riyadh: { url: "https://eservices.alriyadh.gov.sa/_layouts/RM_Pages/Medical/SearchAllCertificates.aspx", short: "Riyadh", label: "Riyadh — Amanat Al-Riyadh" },
+  riyadh: { url: "https://eservices.alriyadh.gov.sa/_layouts/RM_Pages/Medical/SearchAllCertificates.aspx", short: "Riyadh city", label: "Riyadh — Amanat Al-Riyadh" },
   other:  { url: "https://services.balady.gov.sa/health/inquiry/Certificate-Status", short: "Outside Riyadh", label: "Outside Riyadh — Balady" },
 };
-// departments have no store city: where each one is based
-const DEPT_CITY = { "Training": "Riyadh", "Head Office": "Riyadh", "Regional (Area managers)": "", "Makkah Production": "Makkah", "Jeddah Production": "Jeddah" };
-function zoneOfUnit(kind, unit){
-  const city = kind === "store" ? (S.map[unit]?.city || "") : kind === "dept" ? (DEPT_CITY[unit] || "") : "";
-  return !city ? null : /^riyadh$/i.test(city.trim()) ? "riyadh" : "other";
-}
-const zoneOf = e => zoneOfUnit(e.unit_kind, e.unit);
-// which website(s) this login needs: one for a store, both for admins or mixed areas
-function myZones(){
-  const k = scopeKind(), v = S.me?.scope_value;
-  if (k === "store" || k === "dept") { const z = zoneOfUnit(k, v); return z ? [z] : ["riyadh", "other"]; }
-  const zs = new Set(S.emps.map(zoneOf)); zs.delete(null);
-  if (k === "am" && zs.size === 1) return [...zs];
-  return ["riyadh", "other"];
-}
-function baladyBtn(cls = "btn tan"){
-  const zs = myZones();
-  return zs.length === 1 ? `<a class="${cls}" href="${BALADY[zs[0]].url}" target="_blank" rel="noopener">Check health certificate ↗</a>`
-    : zs.map(z => `<a class="${cls}" href="${BALADY[z].url}" target="_blank" rel="noopener">${BALADY[z].short} ↗</a>`).join("");
-}
+// Everyone sees both websites — no guessing from store cities
+const baladyBtn = (cls = "btn tan") => ["riyadh", "other"].map(z => `<a class="${cls}" href="${BALADY[z].url}" target="_blank" rel="noopener">${BALADY[z].short} ↗</a>`).join("");
 const NATIONALITIES = ["Saudi","Bangladeshi","Indian","Filipino","Pakistani","Nepali","Egyptian","Sudanese","Yemeni","Eritrean","Sri Lankan","Jordanian","Syrian","Other"];
 const CARD_STATUSES = ["Needs medical exam","Medical scheduled","Training pending","Training done but card status not updated","Rescheduled for exam","Need to pay SAR 60","Needs Balady registration","Waiting for health-center visit","Renewal in process"];
 const COLS = ["Iqama / National ID","Employee No","Name","Store / Department","Job Role","Nationality","Mobile","Expiry Date","Card Status","Remarks"];
@@ -1005,7 +987,7 @@ function dashboard(){
   return header("Dashboard", `${scopeName() ? esc(scopeName()) + " · " : ""}${c.total.toLocaleString()} employees${nStores > 1 ? ` · ${nStores} stores` : ""}${nDept > 1 ? ` · ${nDept} departments` : ""}${S.left.length ? ` · ${S.left.length} marked as left` : ""}`,
     S.emps.length ? `<button class="btn ghost" onclick="printReport()">PDF report</button>` : "") + `
   ${reqPanel()}
-  <div class="card pad balady-card"><div><b>Check a health certificate</b><div class="sub" dir="rtl" lang="ar">الاستعلام عن الشهادة الصحية</div><p class="note" style="margin:4px 0 0">${myZones().length === 1 ? `Your store uses the <b>${BALADY[myZones()[0]].label}</b> website.` : `Riyadh city stores use <b>Amanat Al-Riyadh</b>; all other cities use <b>Balady</b>.`} Search with the employee's Iqama number, then confirm the expiry date on the Verify page.</p></div><div class="balady-btns">${baladyBtn()}</div></div>
+  <div class="card pad balady-card"><div><b>Check a health certificate</b><div class="sub" dir="rtl" lang="ar">الاستعلام عن الشهادة الصحية</div><p class="note" style="margin:4px 0 0">Store inside <b>Riyadh city</b> → Amanat Al-Riyadh. Store in <b>any other city</b> → Balady. Search with the employee's Iqama number, then confirm the expiry date on the Verify page.</p></div><div class="balady-btns">${baladyBtn()}</div></div>
   ${c.total ? `<div class="card pad vprog-card" onclick="go('verify')" style="cursor:pointer"><div class="vprog-top"><b>Balady verification</b><span class="mono">${vDone.toLocaleString()} of ${c.total.toLocaleString()} verified</span></div>
     <div class="vbar"><i style="width:${Math.round(vDone / c.total * 100)}%"></i></div><p class="note" style="margin:6px 0 0">${c.unv ? `${c.unv.toLocaleString()} still to check on the Balady website. Alerts only count verified people.` : "Everyone is verified. Alerts are based on confirmed dates."}</p></div>` : ""}
   <div class="kpis k5">
@@ -1082,8 +1064,7 @@ const vDoneRow = e => `<div class="card vrow done"><div class="vwho"><b>${esc(e.
   <button class="btn ghost sm" onclick="editEmp('${e.id}')">Edit</button></div></div>`;
 // "Check on Balady" for one person: copies their Iqama (typed or saved) and opens the right website
 function checkLink(e){
-  const z = zoneOf(e), go = z => `<a class="linkbtn" href="${BALADY[z].url}" target="_blank" rel="noopener" onclick="copyIqama('${e.id}')">${z === "riyadh" ? "Check on Amanat Al-Riyadh" : "Check on Balady"} ↗</a>`;
-  return z ? go(z) : go("riyadh") + " · " + go("other");
+  return ["riyadh", "other"].map(z => `<a class="linkbtn" href="${BALADY[z].url}" target="_blank" rel="noopener" onclick="copyIqama('${e.id}')">${BALADY[z].short} ↗</a>`).join(" · ");
 }
 function copyIqama(id){
   const v = ($(`#vi-${id}`)?.value || findEmp(id)?.iqama || "").replace(/\D/g, "");
