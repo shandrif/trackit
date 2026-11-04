@@ -753,8 +753,8 @@ const ICON = {
 };
 const VIEWS = () => [
   ["dashboard","Dashboard",ICON.dash],["verify","Verify",ICON.check],["employees","Employees",ICON.users],
-  ["alerts","Alerts",ICON.bell],["assistant","AI Assistant",ICON.spark],
-  ...(isAdmin() ? [["import","Import",ICON.up],["logins","Users",ICON.shield]] : [])
+  ["alerts","Alerts",ICON.bell],
+  ...(isAdmin() ? [["assistant","AI Assistant",ICON.spark],["import","Import",ICON.up],["logins","Users",ICON.shield]] : [])
 ];
 
 // ---------- auth ----------

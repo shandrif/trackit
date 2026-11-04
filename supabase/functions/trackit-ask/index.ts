@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
       if (!u?.user) return json({ error: "Not signed in" }, 401);
       const { data: me } = await service.from("trackit_profiles").select("id,role,scope_kind,scope_value").eq("id", u.user.id).maybeSingle();
       if (!me) return json({ error: "Your login hasn't been added to Trackit yet." }, 403);
-      if (me.role !== "admin") scope = { kind: me.scope_kind || "all", value: me.scope_value || "" };
+      if (me.role !== "admin") return json({ error: "The AI Assistant is only for admins." }, 403);
     }
     const { question, history } = await req.json();
     if (!question || String(question).length > 600) return json({ error: "Please ask a shorter question." }, 400);
