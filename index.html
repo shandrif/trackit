@@ -396,6 +396,10 @@ tr.unmapped td:first-child b{color:var(--red)}
 .req-row:first-of-type{border-top:0}
 .req-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 @media (max-width:760px){.req-row{flex-direction:column;align-items:stretch}.req-btns{justify-content:flex-start}}
+.balady-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.vid{flex-wrap:wrap}
+.vid .linkbtn{font-weight:700;text-decoration:none}
+@media (max-width:760px){.balady-btns{justify-content:stretch}.balady-btns .btn{flex:1;text-align:center}}
 /* ================= Trackit motion & glass layer =================
    Motion rules (after Emil Kowalski's animation standards):
    - UI motion < 300ms, strong ease-out, never ease-in, no bounce on a work dashboard
@@ -622,8 +626,31 @@ const SUPABASE_URL = "https://rcufmnidwyycbrtqgqga.supabase.co";
 const SUPABASE_KEY = "sb_publishable_u2__PPq2nDZLyoNnLHxkVA_olltjpHc";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const DUE_DAYS = 45;
-const BALADY_URL = "https://eservices.alriyadh.gov.sa/_layouts/RM_Pages/Medical/SearchAllCertificates.aspx";
-const baladyBtn = (cls = "btn tan") => `<a class="${cls}" href="${BALADY_URL}" target="_blank" rel="noopener">Check health certificate on Balady ↗</a>`;
+// Health-certificate websites: Riyadh city uses Amanat Al-Riyadh, everywhere else uses Balady
+const BALADY = {
+  riyadh: { url: "https://eservices.alriyadh.gov.sa/_layouts/RM_Pages/Medical/SearchAllCertificates.aspx", short: "Riyadh", label: "Riyadh — Amanat Al-Riyadh" },
+  other:  { url: "https://services.balady.gov.sa/health/inquiry/Certificate-Status", short: "Outside Riyadh", label: "Outside Riyadh — Balady" },
+};
+// departments have no store city: where each one is based
+const DEPT_CITY = { "Training": "Riyadh", "Head Office": "Riyadh", "Regional (Area managers)": "", "Makkah Production": "Makkah", "Jeddah Production": "Jeddah" };
+function zoneOfUnit(kind, unit){
+  const city = kind === "store" ? (S.map[unit]?.city || "") : kind === "dept" ? (DEPT_CITY[unit] || "") : "";
+  return !city ? null : /^riyadh$/i.test(city.trim()) ? "riyadh" : "other";
+}
+const zoneOf = e => zoneOfUnit(e.unit_kind, e.unit);
+// which website(s) this login needs: one for a store, both for admins or mixed areas
+function myZones(){
+  const k = scopeKind(), v = S.me?.scope_value;
+  if (k === "store" || k === "dept") { const z = zoneOfUnit(k, v); return z ? [z] : ["riyadh", "other"]; }
+  const zs = new Set(S.emps.map(zoneOf)); zs.delete(null);
+  if (k === "am" && zs.size === 1) return [...zs];
+  return ["riyadh", "other"];
+}
+function baladyBtn(cls = "btn tan"){
+  const zs = myZones();
+  return zs.length === 1 ? `<a class="${cls}" href="${BALADY[zs[0]].url}" target="_blank" rel="noopener">Check health certificate ↗</a>`
+    : zs.map(z => `<a class="${cls}" href="${BALADY[z].url}" target="_blank" rel="noopener">${BALADY[z].short} ↗</a>`).join("");
+}
 const NATIONALITIES = ["Saudi","Bangladeshi","Indian","Filipino","Pakistani","Nepali","Egyptian","Sudanese","Yemeni","Eritrean","Sri Lankan","Jordanian","Syrian","Other"];
 const CARD_STATUSES = ["Needs medical exam","Medical scheduled","Training pending","Training done but card status not updated","Rescheduled for exam","Need to pay SAR 60","Needs Balady registration","Waiting for health-center visit","Renewal in process"];
 const COLS = ["Iqama / National ID","Employee No","Name","Store / Department","Job Role","Nationality","Mobile","Expiry Date","Card Status","Remarks"];
@@ -978,7 +1005,7 @@ function dashboard(){
   return header("Dashboard", `${scopeName() ? esc(scopeName()) + " · " : ""}${c.total.toLocaleString()} employees${nStores > 1 ? ` · ${nStores} stores` : ""}${nDept > 1 ? ` · ${nDept} departments` : ""}${S.left.length ? ` · ${S.left.length} marked as left` : ""}`,
     S.emps.length ? `<button class="btn ghost" onclick="printReport()">PDF report</button>` : "") + `
   ${reqPanel()}
-  <div class="card pad balady-card"><div><b>Check a health certificate</b><div class="sub" dir="rtl" lang="ar">الاستعلام عن الشهادة الصحية</div><p class="note" style="margin:4px 0 0">Open the Balady website, search with the employee's Iqama number, then confirm the expiry date on the Verify page.</p></div>${baladyBtn()}</div>
+  <div class="card pad balady-card"><div><b>Check a health certificate</b><div class="sub" dir="rtl" lang="ar">الاستعلام عن الشهادة الصحية</div><p class="note" style="margin:4px 0 0">${myZones().length === 1 ? `Your store uses the <b>${BALADY[myZones()[0]].label}</b> website.` : `Riyadh city stores use <b>Amanat Al-Riyadh</b>; all other cities use <b>Balady</b>.`} Search with the employee's Iqama number, then confirm the expiry date on the Verify page.</p></div><div class="balady-btns">${baladyBtn()}</div></div>
   ${c.total ? `<div class="card pad vprog-card" onclick="go('verify')" style="cursor:pointer"><div class="vprog-top"><b>Balady verification</b><span class="mono">${vDone.toLocaleString()} of ${c.total.toLocaleString()} verified</span></div>
     <div class="vbar"><i style="width:${Math.round(vDone / c.total * 100)}%"></i></div><p class="note" style="margin:6px 0 0">${c.unv ? `${c.unv.toLocaleString()} still to check on the Balady website. Alerts only count verified people.` : "Everyone is verified. Alerts are based on confirmed dates."}</p></div>` : ""}
   <div class="kpis k5">
@@ -1035,7 +1062,7 @@ function vRow(e){
   const k = scopeKind();
   return `<div class="card vrow" data-id="${e.id}">
     <div class="vwho"><b>${esc(e.name)}</b><div class="sub">${whoLine(e)}</div>
-      ${e.iqama ? `<div class="vid"><span class="mono">${esc(e.iqama)}</span><button type="button" class="linkbtn" onclick="copyTxt('${esc(e.iqama)}')">Copy ID</button></div>` : ""}
+      <div class="vid">${e.iqama ? `<span class="mono">${esc(e.iqama)}</span>` : ""}${checkLink(e)}</div>
       <div class="sub">In the file: ${e.expiry ? `<b>${fmtDate(e.expiry)}</b>` : `<b>${esc(e.expiry_note || "no date")}</b>`}${e.card_status ? ` · ${esc(e.card_status)}` : ""}</div>
       ${e.check_note ? `<div class="vcheck">${esc(e.check_note)}</div>` : ""}</div>
     <div class="vform">
@@ -1053,6 +1080,15 @@ function vRow(e){
 const vDoneRow = e => `<div class="card vrow done"><div class="vwho"><b>${esc(e.name)}</b><div class="sub">${whoLine(e)}</div></div>
   <div class="vres">${pill(e)}<div class="mono">${e.expiry ? fmtDate(e.expiry) : esc(e.expiry_note || "No card")}</div><div class="sub">by ${esc(e.verified_by_name || "—")} · ${fmtTS(e.verified_at)}</div>
   <button class="btn ghost sm" onclick="editEmp('${e.id}')">Edit</button></div></div>`;
+// "Check on Balady" for one person: copies their Iqama (typed or saved) and opens the right website
+function checkLink(e){
+  const z = zoneOf(e), go = z => `<a class="linkbtn" href="${BALADY[z].url}" target="_blank" rel="noopener" onclick="copyIqama('${e.id}')">${z === "riyadh" ? "Check on Amanat Al-Riyadh" : "Check on Balady"} ↗</a>`;
+  return z ? go(z) : go("riyadh") + " · " + go("other");
+}
+function copyIqama(id){
+  const v = ($(`#vi-${id}`)?.value || findEmp(id)?.iqama || "").replace(/\D/g, "");
+  if (v) try { navigator.clipboard.writeText(v).then(() => toast("Iqama copied — paste it in the search box"), () => {}); } catch (e) { /* clipboard blocked */ }
+}
 function copyTxt(t){ try { navigator.clipboard.writeText(t).then(() => toast("ID copied — paste it on the Balady website"), () => toast(t)); } catch (e) { toast(t); } }
 async function vConfirm(id, btn){
   const e = findEmp(id); if (!e || btn.disabled) return;
@@ -1220,6 +1256,7 @@ function editEmp(id){
     <form id="ef">
       <div class="row2"><div><label>Expiry date (from Balady)</label><input type="date" id="efDate" name="expiry" value="${esc(e.expiry || "")}"></div>
       <div><label>…or type the Hijri date</label>${hijriBox("efDate")}</div></div>
+      ${id ? `<div class="vid" style="margin-top:-4px">${checkLink(e)}</div>` : ""}
       <label class="chk"><input type="checkbox" name="verified" ${e.verified_at ? "checked" : ""}> I checked this on the Balady website${e.verified_at ? ` <span class="sub">— verified by ${esc(e.verified_by_name || "someone")} · ${fmtTS(e.verified_at)}</span>` : ""}</label>
       <div class="row2"><div><label>Card status</label>
         <select name="card_status_sel" id="csSel" onchange="$('#csCustomWrap').classList.toggle('hidden', this.value !== '__custom'); if (this.value === '__custom') $('#csCustom').focus()">

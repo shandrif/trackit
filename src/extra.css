@@ -225,3 +225,7 @@ tr.unmapped td:first-child b{color:var(--red)}
 .req-row:first-of-type{border-top:0}
 .req-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 @media (max-width:760px){.req-row{flex-direction:column;align-items:stretch}.req-btns{justify-content:flex-start}}
+.balady-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.vid{flex-wrap:wrap}
+.vid .linkbtn{font-weight:700;text-decoration:none}
+@media (max-width:760px){.balady-btns{justify-content:stretch}.balady-btns .btn{flex:1;text-align:center}}
