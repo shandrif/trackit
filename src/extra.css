@@ -229,3 +229,11 @@ tr.unmapped td:first-child b{color:var(--red)}
 .vid{flex-wrap:wrap}
 .vid .linkbtn{font-weight:700;text-decoration:none}
 @media (max-width:760px){.balady-btns{justify-content:stretch}.balady-btns .btn{flex:1;text-align:center}}
+/* Verify header actions: inline on desktop, tidy 2-column grid on phones */
+.v-acts{display:contents}
+@media (max-width:760px){
+  .top>div:last-child:has(.v-acts){width:100%}
+  .v-acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+  .v-acts .btn{width:100%;padding-left:10px;padding-right:10px}
+  .v-acts.odd .btn:last-child{grid-column:1/-1}
+}

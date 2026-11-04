@@ -406,7 +406,7 @@ function verifyView(){
   const pct = all.length ? Math.round(done / all.length * 100) : 0;
   const prog = wide && all.length ? groupRows(placeOf).map(([p, v]) => [p, v.total, v.total - v.unv]).sort((x, y) => (x[0] === "Unassigned" ? -1 : y[0] === "Unassigned" ? 1 : 0) || (x[2] / x[1]) - (y[2] / y[1]) || y[1] - x[1]) : [];
   const nUn = all.filter(e => e.unit_kind === "unassigned").length;
-  return header("Verify on Balady", scopeName() ? esc(scopeName()) : "Check every person on the Balady website, then confirm", `${baladyBtn("btn tan")}<button class="btn ghost" onclick="findPerson()">Find a person</button>${k !== "am" ? `<button class="btn" onclick="editEmp()">+ Add</button>` : ""}`) + `
+  return header("Verify on Balady", scopeName() ? esc(scopeName()) : "Check every person on the Balady website, then confirm", `<div class="v-acts${k !== "am" ? "" : " odd"}">${baladyBtn("btn tan")}<button class="btn ghost" onclick="findPerson()">Find a person</button>${k !== "am" ? `<button class="btn" onclick="editEmp()">+ Add new staff</button>` : ""}</div>`) + `
   <div class="card pad"><div class="vprog-top"><b>${done.toLocaleString()} of ${all.length.toLocaleString()} verified</b><span class="mono">${pct}%</span></div><div class="vbar"><i style="width:${pct}%"></i></div>
     <p class="note" style="margin:8px 0 0">Enter <b>Iqama</b> and <b>mobile</b> → check on Balady → enter the expiry (Gregorian or Hijri) → <b>Confirm</b>.${k === "store" || k === "dept" ? ` Missing someone? <b>Find a person</b>. Not working here? <b>Not here</b>.` : ""}</p></div>
   ${reqPanel()}
@@ -501,7 +501,7 @@ async function fpSearch(){
   if ($("#fpq")?.value.trim() !== q) return;
   if (error) { out.innerHTML = `<div class="err">${esc(error.message)}</div>`; return; }
   out.innerHTML = data.length ? data.map(p => `<div class="fp-row"><div><b>${esc(p.name)}</b><div class="sub">${[p.employee_id && "No. " + esc(p.employee_id), p.id_last4 && "ID …" + esc(p.id_last4), p.job_role && esc(p.job_role)].filter(Boolean).join(" · ")}</div><div class="sub">Now: <b>${esc(p.place)}</b></div></div>
-    ${!isAdmin() && scopeKind() !== "am" && p.unit_kind === scopeKind() && p.unit === S.me.scope_value ? `<span class="pill p-ok"><i></i>Already yours</span>` : `<button class="btn sm" onclick="fpMove('${p.id}', this)">${p.unit_kind === "unassigned" || isAdmin() ? "Move here" : "Request move"}</button>`}</div>`).join("") : `<p class="note">Nobody found. Check the spelling, or add them with <b>+ Add</b>.</p>`;
+    ${!isAdmin() && scopeKind() !== "am" && p.unit_kind === scopeKind() && p.unit === S.me.scope_value ? `<span class="pill p-ok"><i></i>Already yours</span>` : `<button class="btn sm" onclick="fpMove('${p.id}', this)">${p.unit_kind === "unassigned" || isAdmin() ? "Move here" : "Request move"}</button>`}</div>`).join("") : `<p class="note">Nobody found. Check the spelling, or add them with <b>+ Add new staff</b>.</p>`;
 }
 async function fpMove(id, btn){
   const v = ($("#fpTo")?.value) || targets()[0][0], [k, u] = v.split("|");
