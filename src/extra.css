@@ -237,3 +237,20 @@ tr.unmapped td:first-child b{color:var(--red)}
   .v-acts .btn{width:100%;padding-left:10px;padding-right:10px}
   .v-acts.odd .btn:last-child{grid-column:1/-1}
 }
+/* WhatsApp reminders */
+.wa-btn{background:#1F8F55;color:#fff} .wa-btn:hover{background:#187446}
+.btn.ghost.wa-btn{background:transparent;color:var(--ink)}
+.rem-tools{display:flex;flex-direction:column;gap:8px;margin:4px 0 12px}
+.rem-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.rem-check input{width:18px;height:18px;accent-color:#1F8F55}
+.rem-card{border:1px solid var(--line);border-radius:14px;padding:14px;background:#FBF7F1;display:flex;flex-direction:column;gap:6px}
+.rem-top{display:flex;justify-content:space-between;gap:8px}
+.rem-name{font-size:18px}
+.rem-text{background:#E7F5EC;border-radius:12px 12px 12px 4px;padding:10px 12px;font-size:14px;white-space:pre-wrap;margin-top:4px}
+.rem-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+.rem-acts .rem-go{flex:1;max-width:240px}
+.rem-done{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--ok-bg)}
+.rem-all{margin-top:12px} .rem-all summary{cursor:pointer;font-size:13px;color:var(--muted);padding:4px 0}
+.msg-row{cursor:pointer} .msg-row.cur{outline:2px solid #1F8F55}
+.rem-tag{display:flex;align-items:center;gap:4px;color:#1F8F55;white-space:nowrap} .rem-tag svg{width:13px;height:13px}
+@media (max-width:760px){.rem-acts{flex-wrap:wrap}.rem-acts .rem-go{max-width:none;flex-basis:100%;order:-1}.rem-acts .btn.ghost{flex:1}}

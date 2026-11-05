@@ -408,6 +408,23 @@ tr.unmapped td:first-child b{color:var(--red)}
   .v-acts .btn{width:100%;padding-left:10px;padding-right:10px}
   .v-acts.odd .btn:last-child{grid-column:1/-1}
 }
+/* WhatsApp reminders */
+.wa-btn{background:#1F8F55;color:#fff} .wa-btn:hover{background:#187446}
+.btn.ghost.wa-btn{background:transparent;color:var(--ink)}
+.rem-tools{display:flex;flex-direction:column;gap:8px;margin:4px 0 12px}
+.rem-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.rem-check input{width:18px;height:18px;accent-color:#1F8F55}
+.rem-card{border:1px solid var(--line);border-radius:14px;padding:14px;background:#FBF7F1;display:flex;flex-direction:column;gap:6px}
+.rem-top{display:flex;justify-content:space-between;gap:8px}
+.rem-name{font-size:18px}
+.rem-text{background:#E7F5EC;border-radius:12px 12px 12px 4px;padding:10px 12px;font-size:14px;white-space:pre-wrap;margin-top:4px}
+.rem-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+.rem-acts .rem-go{flex:1;max-width:240px}
+.rem-done{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--ok-bg)}
+.rem-all{margin-top:12px} .rem-all summary{cursor:pointer;font-size:13px;color:var(--muted);padding:4px 0}
+.msg-row{cursor:pointer} .msg-row.cur{outline:2px solid #1F8F55}
+.rem-tag{display:flex;align-items:center;gap:4px;color:#1F8F55;white-space:nowrap} .rem-tag svg{width:13px;height:13px}
+@media (max-width:760px){.rem-acts{flex-wrap:wrap}.rem-acts .rem-go{max-width:none;flex-basis:100%;order:-1}.rem-acts .btn.ghost{flex:1}}
 /* ================= Trackit motion & glass layer =================
    Motion rules (after Emil Kowalski's animation standards):
    - UI motion < 300ms, strong ease-out, never ease-in, no bounce on a work dashboard
@@ -716,7 +733,7 @@ const dateCell = e => e.expiry ? `${fmtDate(e.expiry)}<div class="sub">${relDays
 const isAdmin = () => S.me?.role === "admin";
 function toast(msg){ const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 function phoneIntl(m){ let d = String(m||"").replace(/\D/g,""); if (!d) return ""; if (d.startsWith("00")) d = d.slice(2); if (d.startsWith("0")) d = d.slice(1); if (d.length === 9 && d.startsWith("5")) d = "966" + d; return d; }
-function waText(e){
+function waMsg(e){
   const s = statusOf(e), cs = e.card_status || "";
   const first = String(e.name || "").trim().split(/\s+/)[0] || "";
   const hi = first ? `Hi ${first[0].toUpperCase()}${first.slice(1).toLowerCase()},` : "Hi,";
@@ -731,11 +748,12 @@ function waText(e){
   const msg = BY_CARD[cs] || (s === "exp" ? `${hi} your Baladiya card expired on ${fmtDate(e.expiry)}. Please renew it as soon as possible and share the new card with your area manager. Thank you.`
     : s === "due" ? `${hi} your Baladiya card expires on ${fmtDate(e.expiry)} (${n === 0 ? "today" : `in ${n} day${n === 1 ? "" : "s"}`}). Please book your renewal now. Thank you.`
     : s === "miss" ? `${hi} we don't have your Baladiya card expiry date. Please send a photo of your Baladiya card to your area manager. Thank you.` : "");
-  return msg ? "?text=" + encodeURIComponent(msg) : "";
+  return msg;
 }
+function waText(e){ const m = waMsg(e); return m ? "?text=" + encodeURIComponent(m) : ""; }
 function contact(e){
   const p = phoneIntl(e.mobile); if (!p) return "";
-  return `<span class="contact"><a href="tel:+${p}" title="Call" aria-label="Call">${ICON.phone}</a><a href="https://wa.me/${p}${waText(e)}" target="_blank" rel="noopener" title="${waText(e) ? "WhatsApp — reminder ready to send" : "WhatsApp"}" aria-label="WhatsApp">${ICON.wa}</a></span>`;
+  return `<span class="contact"><a href="tel:+${p}" title="Call" aria-label="Call">${ICON.phone}</a><a href="https://wa.me/${p}${waText(e)}" target="_blank" rel="noopener" onclick="${waText(e) ? `noteReminded('${e.id}')` : ""}" title="${waText(e) ? "WhatsApp — reminder ready to send" : "WhatsApp"}" aria-label="WhatsApp">${ICON.wa}</a></span>`;
 }
 const ICON = {
   dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
@@ -1641,13 +1659,13 @@ function alerts(){
   const lists = { exp: by("exp"), due: by("due"), miss: by("miss") };
   const all = lists[S.alertTab], per = 50, pages = Math.max(1, Math.ceil(all.length / per));
   S.page = Math.min(S.page, pages); const list = all.slice((S.page - 1) * per, S.page * per);
-  return header("Alerts", "Who needs a Baladiya renewal", storesNeedingAction().length ? `<button class="btn ghost" onclick="messageStore()">Message a store</button>` : "") + `
+  return header("Alerts", "Who needs a Baladiya renewal", storesNeedingAction().length ? `<button class="btn wa-btn" onclick="messageStore()">${ICON.wa}<span>Send reminders</span></button>` : "") + `
   <div class="tabs">${[["exp","Expired"],["due",STATUS_LABEL.due],["miss","Date missing"]].map(([k,l]) => `<button class="${S.alertTab===k?"on":""}" onclick="S.alertTab='${k}';S.page=1;render()">${l} (${lists[k].length})</button>`).join("")}</div>
   ${hasMap() && scopeKind() !== "store" && scopeKind() !== "dept" ? `<div class="filters">${["region","city","am","rom"].map(k => { const lbl = { region:"All regions", city:"All cities", am:"All area managers", rom:"All ROMs" }[k]; const s = new Set(S.emps.map(e => GROUPS[k][1](e)).filter(Boolean)); return `<select aria-label="${lbl}" onchange="S.filters.${k}=this.value;S.page=1;render()"><option value="">${lbl}</option>${[...s].sort().map(v => `<option value="${esc(v)}" ${S.filters[k]===v?"selected":""}>${esc(v)}</option>`).join("")}</select>`; }).join("")}</div>` : ""}
   ${(n => n ? `<div class="warnbox" style="cursor:pointer" onclick="go('verify')">${n.toLocaleString()} ${n === 1 ? "person isn't" : "people aren't"} verified on Balady yet, so ${n === 1 ? "they're" : "they're"} not in these alerts. <b>Go to Verify →</b></div>` : "")(S.emps.filter(e => !e.verified_at && inArea(e)).length)}
   ${S.alertTab === "miss" ? `<p class="note" style="margin-top:-4px">Verified, but no expiry date on Balady (not registered, or the exam is pending).</p>` : ""}
   <div class="card">${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th>Expiry</th><th class="hm">Card status / remarks</th><th></th></tr></thead><tbody>
-  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(eid(e) || (e.iqama ? "ID …" + e.iqama.slice(-4) : ""))}<span class="sm-only"> · ${esc(placeOf(e))}</span></div>${e.card_status ? `<div class="sm-only-b">${csChip(e)}</div>` : ""}</td><td class="hm">${esc(placeOf(e))}${storeSub(e)}</td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
+  ${list.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(eid(e) || (e.iqama ? "ID …" + e.iqama.slice(-4) : ""))}<span class="sm-only"> · ${esc(placeOf(e))}</span></div>${remindedTag(e)}${e.card_status ? `<div class="sm-only-b">${csChip(e)}</div>` : ""}</td><td class="hm">${esc(placeOf(e))}${storeSub(e)}</td><td class="mono">${dateCell(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td><td style="text-align:right;white-space:nowrap">${contact(e)}<button class="btn sm ghost" onclick="editEmp('${e.id}')">Update</button></td></tr>`).join("")}
   </tbody></table></div>${pages > 1 ? `<div class="pager"><span>${all.length.toLocaleString()} people · page ${S.page} of ${pages}</span><span style="display:flex;gap:8px"><button class="btn sm ghost" ${S.page<=1?"disabled":""} onclick="S.page--;render()">Previous</button><button class="btn sm ghost" ${S.page>=pages?"disabled":""} onclick="S.page++;render()">Next</button></span></div>` : ""}` : `<div class="empty">Nobody in this list.</div>`}</div>`;
 }
 
@@ -1657,26 +1675,74 @@ function storesNeedingAction(){
   const c = {}; for (const e of S.emps) if (needsMsg(e)) c[placeOf(e)] = (c[placeOf(e)] || 0) + 1;
   return Object.entries(c).sort((x, y) => y[1] - x[1]);
 }
-S.sent = new Set();
-function messageStore(store){
-  const list = storesNeedingAction(); if (!list.length) return;
-  const st = store ?? (S.msgStore && list.some(x => x[0] === S.msgStore) ? S.msgStore : list[0][0]); S.msgStore = st;
-  const order = { exp:0, due:1, miss:2, ok:3, unv:4 };
-  const ppl = S.emps.filter(e => placeOf(e) === st && needsMsg(e)).sort((x, y) => order[statusOf(x)] - order[statusOf(y)]);
-  const done = ppl.filter(e => S.sent.has(e.id)).length;
-  modal(`<h3>Message a store</h3>
-    <p class="note" style="margin-top:-6px">Everyone at the store who needs action. Tap WhatsApp for each person — the message is already written for their card status.</p>
-    <select id="msgStoreSel" onchange="messageStore(this.value)">${list.map(([s, n]) => `<option value="${esc(s)}" ${s === st ? "selected" : ""}>${esc(s)} (${n})</option>`).join("")}</select>
-    <p class="note" id="msgCount">${done} of ${ppl.length} messaged</p>
-    <div class="msg-list">${ppl.map(e => { const ph = phoneIntl(e.mobile); return `<div class="msg-row ${S.sent.has(e.id) ? "sent" : ""}" data-id="${e.id}">
-      <div class="msg-who"><b>${esc(e.name)}</b><div class="sub">${pill(e)} ${csChip(e)}</div></div>
-      ${ph ? `<a class="btn sm wa-btn" href="https://wa.me/${ph}${waText(e)}" target="_blank" rel="noopener" onclick="markSent('${e.id}')">${ICON.wa}<span>WhatsApp</span></a>` : `<span class="sub">No mobile number</span>`}
-    </div>`; }).join("")}</div>
-    <div class="actions"><button class="btn" onclick="closeModal()">Done</button></div>`, true);
+// Free WhatsApp reminders: WhatsApp opens with the message already written, the manager taps Send,
+// comes back, and the next person is ready. Who was reminded is remembered on this device only.
+const REMIND_KEY = "trackit-reminded", REMIND_GAP = 7;
+S.sent = new Set(); S.msgStore = ""; S.msgSkip = true; S.msgCur = null;
+function remindedMap(){ try { const m = JSON.parse(localStorage.getItem(REMIND_KEY) || "{}"); return m && typeof m === "object" ? m : {}; } catch (e) { return {}; } }
+function remindedAgo(e){ const d = remindedMap()[e.id]; if (!d) return null; const n = Math.floor((todayUTC() - Date.parse(d)) / 86400000); return n >= 0 ? n : null; }
+function agoText(n){ return n === 0 ? "today" : n === 1 ? "yesterday" : `${n} days ago`; }
+function remindedTag(e){ const n = remindedAgo(e); return n !== null && n <= 30 ? `<div class="sub rem-tag">${ICON.wa}Reminded ${agoText(n)}</div>` : ""; }
+function noteReminded(id){
+  S.sent.add(id);
+  const m = remindedMap(), n = new Date(), keep = todayUTC() - 90 * 86400000;
+  m[id] = new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())).toISOString().slice(0, 10);
+  for (const k of Object.keys(m)) if (Date.parse(m[k]) < keep) delete m[k];
+  try { localStorage.setItem(REMIND_KEY, JSON.stringify(m)); } catch (e) { /* storage blocked: remembered for this visit only */ }
 }
-function markSent(id){
-  S.sent.add(id); const row = document.querySelector(`.msg-row[data-id="${id}"]`); if (row) row.classList.add("sent");
-  const rows = document.querySelectorAll(".msg-row"), n = document.querySelectorAll(".msg-row.sent").length; const c = $("#msgCount"); if (c) c.textContent = `${n} of ${rows.length} messaged`;
+function remindQueue(){
+  const order = { exp:0, due:1, miss:2, ok:3, unv:4 };
+  const all = S.emps.filter(e => needsMsg(e) && waMsg(e) && (!S.msgStore || placeOf(e) === S.msgStore));
+  // people reminded on an earlier day stay out while the box is ticked; people sent now stay in so the count adds up
+  const recent = e => { const n = remindedAgo(e); return n !== null && n < REMIND_GAP && !S.sent.has(e.id); };
+  const list = all.filter(e => !(S.msgSkip && recent(e)));
+  const withPhone = list.filter(e => phoneIntl(e.mobile)).sort((x, y) => order[statusOf(x)] - order[statusOf(y)] || placeOf(x).localeCompare(placeOf(y)) || String(x.name).localeCompare(String(y.name)));
+  return { q: withPhone, noPhone: list.length - withPhone.length, skipped: all.length - list.length };
+}
+function messageStore(store){
+  const stores = storesNeedingAction(); if (!stores.length) return;
+  if (store !== undefined) { S.msgStore = store; S.msgCur = null; }
+  if (S.msgStore && !stores.some(x => x[0] === S.msgStore)) S.msgStore = "";
+  const { q, noPhone, skipped } = remindQueue();
+  const done = q.filter(e => S.sent.has(e.id)).length;
+  let cur = q.find(e => e.id === S.msgCur) || q.find(e => !S.sent.has(e.id)) || null;
+  S.msgCur = cur?.id ?? null;
+  const i = cur ? q.indexOf(cur) : -1, total = stores.reduce((s, x) => s + x[1], 0);
+  const card = !q.length ? `<div class="empty">${skipped ? `Everyone here was reminded in the last ${REMIND_GAP} days. Untick the box above to remind them again.` : "Nobody here has a mobile number to message."}</div>`
+    : done === q.length ? `<div class="rem-done"><b>All done</b><p class="note">${q.length} reminder${q.length === 1 ? "" : "s"} opened in WhatsApp. Make sure you pressed Send in each chat.</p></div>`
+    : `<div class="rem-card">
+        <div class="rem-top"><span class="sub mono">${i + 1} of ${q.length}</span><span class="sub">${esc(placeOf(cur))}</span></div>
+        <b class="rem-name">${esc(cur.name)}</b>
+        <div class="sub">${pill(cur)} ${csChip(cur)}${(n => n !== null ? ` · last reminded ${agoText(n)}` : "")(remindedAgo(cur))}</div>
+        <div class="rem-text">${esc(waMsg(cur))}</div>
+        <div class="rem-acts">
+          <button class="btn ghost" ${i <= 0 ? "disabled" : ""} onclick="remindMove(-1)">Back</button>
+          <button class="btn ghost" onclick="remindMove(1)">Skip</button>
+          <a class="btn wa-btn rem-go" href="https://wa.me/${phoneIntl(cur.mobile)}${waText(cur)}" target="_blank" rel="noopener" onclick="remindSent('${cur.id}')">${ICON.wa}<span>Open WhatsApp</span></a>
+        </div></div>`;
+  modal(`<h3>Send WhatsApp reminders</h3>
+    <p class="note" style="margin-top:-6px">Free. WhatsApp opens with the message already written for each person: tap <b>Send</b> there, come back here, and the next person is ready.</p>
+    <div class="rem-tools">
+      <select id="msgStoreSel" onchange="messageStore(this.value)"><option value="">All stores (${total})</option>${stores.map(([s, n]) => `<option value="${esc(s)}" ${s === S.msgStore ? "selected" : ""}>${esc(s)} (${n})</option>`).join("")}</select>
+      <label class="rem-check"><input type="checkbox" ${S.msgSkip ? "checked" : ""} onchange="S.msgSkip=this.checked;S.msgCur=null;messageStore()"> Skip people reminded in the last ${REMIND_GAP} days${skipped ? ` (${skipped})` : ""}</label>
+    </div>
+    ${q.length ? `<div class="vbar"><i style="width:${Math.round(done / q.length * 100)}%"></i></div><p class="note" id="msgCount" style="margin:6px 0 10px">${done} of ${q.length} sent${noPhone ? ` · ${noPhone} with no mobile number (add it with Update)` : ""}</p>` : ""}
+    ${card}
+    ${q.length ? `<details class="rem-all"><summary>Everyone in this list (${q.length})</summary><div class="msg-list">${q.map(e => `<div class="msg-row ${S.sent.has(e.id) ? "sent" : ""} ${e === cur ? "cur" : ""}" data-id="${e.id}" onclick="S.msgCur='${e.id}';messageStore()">
+      <div class="msg-who"><b>${esc(e.name)}</b><div class="sub">${esc(placeOf(e))} · ${pill(e)} ${csChip(e)}</div></div>
+      <span class="sub">${S.sent.has(e.id) ? "Sent ✓" : (n => n !== null ? agoText(n) : "")(remindedAgo(e))}</span></div>`).join("")}</div></details>` : ""}
+    <div class="actions"><button class="btn" onclick="closeModal();render()">Done</button></div>`, true);
+}
+function remindMove(step){
+  const { q } = remindQueue(); const i = q.findIndex(e => e.id === S.msgCur);
+  const n = q[Math.min(q.length - 1, Math.max(0, i + step))]; if (n) { S.msgCur = n.id; messageStore(); }
+}
+function remindSent(id){
+  noteReminded(id);
+  // let the link open WhatsApp first, then move to the next person who hasn't been sent
+  setTimeout(() => { const { q } = remindQueue(); const i = q.findIndex(e => e.id === id);
+    const next = q.slice(i + 1).find(e => !S.sent.has(e.id)) || q.find(e => !S.sent.has(e.id));
+    S.msgCur = next ? next.id : id; if (document.querySelector("#msgStoreSel")) messageStore(); }, 350);
 }
 
 // ---------- one-page PDF report ----------
