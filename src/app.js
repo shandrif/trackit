@@ -236,10 +236,11 @@ async function loadCore(){
 }
 async function loadAdmin(){
   if (isAdmin()) {
-    const [{ data }, { data: st }, { data: cr }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
+    const [{ data }, { data: st }, { data: cr }, { data: bk }] = await Promise.all([sb.from("trackit_profiles").select("*").order("full_name"),
       sb.from("trackit_settings").select("email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result").eq("id", 1).maybeSingle(),
-      sb.from("trackit_login_creds").select("profile_id,login,password")]);
-    S.profiles = data || []; S.settings = st;
+      sb.from("trackit_login_creds").select("profile_id,login,password"),
+      sb.from("trackit_backup_status").select("ok,message,last_ok_at,checked_at,made_by").eq("id", 1).maybeSingle()]);
+    S.profiles = data || []; S.settings = st; S.backup = bk || null;
     S.creds = {}; for (const c of cr || []) S.creds[c.profile_id] = c;
   }
 }
@@ -1171,6 +1172,7 @@ function loginsView(){
   ${S.profiles.map(p => `<tr><td><b>${esc(p.full_name || p.email)}</b><div class="sub sm-only">${esc(p.email)}</div></td><td class="hm">${esc(p.email)}</td><td>${esc(accessTxt(p))}${p.role !== "admin" ? ` <button class="linkbtn" onclick="setAccess('${p.id}')">Change</button>` : ""}</td>
     <td style="text-align:right;white-space:nowrap"><button class="btn sm ghost" onclick="resetPw('${p.id}')">${ICON.key}<span class="hm">Reset password</span></button>${p.id !== S.me.id ? `<button class="icon-btn" title="Remove" aria-label="Remove" onclick="delLogin('${p.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
   </tbody></table></div></div>
+  ${backupCard()}
   ${mappingCard()}
   ${emailCard()}`;
 }
@@ -1210,6 +1212,36 @@ async function saveGeo(inp){
 }
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const hourLabel = h => `${((h + 11) % 12) + 1}:00 ${h < 12 ? "AM" : "PM"}`;
+// ---------- admin: backups ----------
+function backupCard(){
+  const b = S.backup || {};
+  const last = b.last_ok_at ? fmtTS(b.last_ok_at) : "none yet";
+  const warn = b.ok === false;
+  return `<div class="card pad section" id="backupCard"><h3>Backups</h3>
+    <p class="note">All Trackit data is saved automatically <b>every night at 3:00 AM</b> (Riyadh). Two copies are kept: the <b>latest</b> and the <b>previous</b> one. If staff numbers suddenly drop by more than 20%, the nightly backup does not overwrite the good copy. Passwords are never included.</p>
+    <div class="steprow"><span><b>Last good backup</b> <span class="sub">${esc(last)}${b.made_by ? ` · ${esc(b.made_by)}` : ""}</span></span>${b.ok === true ? `<span class="pill p-ok"><i></i>OK</span>` : warn ? `<span class="pill p-exp"><i></i>Check</span>` : ""}</div>
+    ${b.message ? `<p class="note"${warn ? ' style="color:var(--red)"' : ""}>${esc(b.message)}</p>` : ""}
+    <div class="err" id="bkErr"></div>
+    <div class="actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn" id="bkNow" onclick="backupNow()">Back up now</button><button class="btn ghost" onclick="downloadBackup('latest', this)">Download latest (Excel)</button><button class="btn ghost" onclick="downloadBackup('previous', this)">Download previous</button></div>
+  </div>`;
+}
+async function callBackup(body){
+  const { data, error } = await sb.functions.invoke("trackit-backup", { body });
+  let d = data; if (!d && error?.context?.json) { try { d = await error.context.json(); } catch {} }
+  return d || { error: error?.message || "Something went wrong" };
+}
+async function backupNow(force){
+  const btn = $("#bkNow"); btn.disabled = true; btn.textContent = "Backing up…"; $("#bkErr").textContent = "";
+  const d = await callBackup(force ? { force: true } : {});
+  await loadAdmin(); render();
+  if (d.ok) return toast("Backup saved");
+  if (d.blocked && confirm(`Active staff fell from ${d.before} to ${d.active} since the last backup.\n\nOnly continue if this drop is correct. Save this as the new backup?`)) return backupNow(true);
+  const e = $("#bkErr"); if (e) e.textContent = d.message || d.error || "Backup failed";
+}
+async function downloadBackup(which, btn){
+  btn.disabled = true; const d = await callBackup({ action: "download", which }); btn.disabled = false;
+  if (d.url) location.href = d.url; else toast(d.error || "Couldn't get the file");
+}
 function emailCard(){
   const st = S.settings; if (!st) return "";
   const when = st.frequency === "weekly" ? `every ${DAYS[st.weekday]} at ${hourLabel(st.send_hour)}` : `every day at ${hourLabel(st.send_hour)}`;
