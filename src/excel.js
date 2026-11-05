@@ -27,8 +27,9 @@ function loadExcelJS(){
 
 // ---- small helpers ----
 const xlDate = d => { if (!d) return null; const t = Date.parse(String(d).slice(0, 10)); return isNaN(t) ? null : new Date(t); };
-const xlStamp = () => { const n = new Date(); return `${String(n.getDate()).padStart(2, "0")} ${MONTHS[n.getMonth()]} ${n.getFullYear()}`; };
-const xlNow = () => new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+// always Riyadh time, also when the file is made on the server for the scheduled email
+const xlStamp = () => new Date().toLocaleDateString("en-GB", { timeZone: "Asia/Riyadh", day: "2-digit", month: "short", year: "numeric" });
+const xlNow = () => new Date().toLocaleString("en-GB", { timeZone: "Asia/Riyadh", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const xlWho = () => S.me?.full_name || S.me?.email || "";
 const xlScope = () => isAdmin() ? "All Stores" : (scopeName() || "My staff");
 const xlFill = c => ({ type: "pattern", pattern: "solid", fgColor: { argb: c } });

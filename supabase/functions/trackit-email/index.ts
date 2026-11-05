@@ -1,4 +1,31 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import ExcelJS from "npm:exceljs@4.4.0";
+import { jsPDF } from "npm:jspdf@2.5.2";
+import * as AT from "npm:jspdf-autotable@3.8.4";
+import { makeAlertsXlsx, makeAlertsPdf } from "./report.js";
+const autoTable: any = [(AT as any).autoTable, (AT as any).default, (AT as any).default?.default, (AT as any).default?.autoTable].find((f) => typeof f === "function");
+
+// the same Excel as the Alerts page "Download Excel" button, plus a PDF report — attached to every alert email
+function b64(bytes: Uint8Array): string {
+  let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function attachments(service: any): Promise<{ files: { name: string; content: string }[]; notes: string[] }> {
+  const notes: string[] = [], files: { name: string; content: string }[] = [];
+  const all: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await service.from("trackit_staff").select("*").order("id").range(from, from + 999);
+    if (error) throw new Error(error.message);
+    all.push(...(data || [])); if (!data || data.length < 1000) break;
+  }
+  const [{ data: mp }, { data: rm }] = await Promise.all([service.from("trackit_store_map").select("*"), service.from("trackit_reminders").select("staff_id,reminded_on")]);
+  const map: Record<string, any> = {}; for (const m of mp || []) map[m.code] = m;
+  const rem: Record<string, string> = {}; for (const r of rm || []) rem[r.staff_id] = r.reminded_on;
+  const d = { emps: all.filter((e) => !e.left_at), left: all.filter((e) => e.left_at), map, rem };
+  try { const x = await makeAlertsXlsx(ExcelJS, d); files.push({ name: x.name, content: b64(x.buf) }); } catch (e) { notes.push("Excel not attached: " + String((e as any)?.message || e).slice(0, 120)); }
+  try { const p = makeAlertsPdf(jsPDF, autoTable, d); files.push({ name: p.name, content: b64(p.buf) }); } catch (e) { notes.push("PDF not attached: " + String((e as any)?.message || e).slice(0, 120)); }
+  return { files, notes };
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -117,6 +144,8 @@ Deno.serve(async (req) => {
       return json({ skipped: "nothing to report" });
     }
 
+    let att: { files: { name: string; content: string }[]; notes: string[] } = { files: [], notes: [] };
+    try { att = await attachments(service); } catch (e) { att.notes.push("Attachments not made: " + String((e as any)?.message || e).slice(0, 120)); }
     const r = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: { "api-key": key, "Content-Type": "application/json", accept: "application/json" },
@@ -125,6 +154,7 @@ Deno.serve(async (req) => {
         to: recipients.map((email) => ({ email })),
         subject: (mode === "test" ? "[Test] " : "") + mail.subject,
         htmlContent: mail.html,
+        ...(att.files.length ? { attachment: att.files } : {}),
       }),
     });
     const text = await r.text();
@@ -135,9 +165,9 @@ Deno.serve(async (req) => {
       await service.from("trackit_settings").update({ last_result: `${now.date}: failed — ${msg}` }).eq("id", 1);
       return json({ error: "Brevo: " + msg }, 502);
     }
-    const note = `${now.date}: ${mode === "test" ? "test " : ""}email sent to ${recipients.length} receiver${recipients.length === 1 ? "" : "s"} (${mail.exp} expired, ${mail.due} due)`;
+    const note = `${now.date}: ${mode === "test" ? "test " : ""}email sent to ${recipients.length} receiver${recipients.length === 1 ? "" : "s"} (${mail.exp} expired, ${mail.due} due) · attached: ${att.files.map((f) => f.name.endsWith(".pdf") ? "PDF" : "Excel").join(" + ") || "none"}${att.notes.length ? " · " + att.notes.join(" · ") : ""}`;
     await service.from("trackit_settings").update(mode === "cron" ? { last_sent: now.date, last_result: note } : { last_result: note }).eq("id", 1);
-    return json({ ok: true, sent: recipients.length, expired: mail.exp, due: mail.due });
+    return json({ ok: true, sent: recipients.length, expired: mail.exp, due: mail.due, attached: att.files.map((f) => f.name), notes: att.notes });
   } catch (e) {
     return json({ error: String((e as any)?.message || e) }, 500);
   }
