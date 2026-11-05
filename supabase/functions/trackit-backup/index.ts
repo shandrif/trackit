@@ -5,6 +5,8 @@
 //     previous/… ← the one before it
 // - Safety: if active staff dropped by more than 20% since the last backup, the good copy is NOT overwritten.
 // - Optional off-site copy to OneDrive when MS_TENANT_ID / MS_CLIENT_ID / MS_CLIENT_SECRET / MS_ONEDRIVE_USER are set.
+// - Emails the Excel file each night to the address in trackit_backup_status.email_to (Brevo), so a
+//   Power Automate flow can save it into OneDrive.
 // - Passwords and secret keys are never included.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as XLSX from "npm:xlsx@0.18.5";
@@ -60,6 +62,37 @@ function toXlsx(data: Record<string, any[]>, meta: Record<string, unknown>): Uin
     XLSX.utils.book_append_sheet(wb, flat.length ? XLSX.utils.json_to_sheet(flat) : XLSX.utils.aoa_to_sheet([["(empty)"]]), t.replace(/^trackit_/, "").slice(0, 31));
   }
   return new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx", compression: true }) as ArrayBuffer);
+}
+
+// ---------- nightly email with the Excel attached (Brevo, same sender as the alert emails) ----------
+function brevoKey(): string | null {
+  const exact = Deno.env.get("BREVO_API_KEY");
+  if (exact && exact.trim()) return exact.trim();
+  for (const [k, v] of Object.entries(Deno.env.toObject())) if (/brevo|sendinblue/i.test(k) && (v || "").trim()) return v.trim();
+  return null;
+}
+function b64(bytes: Uint8Array): string {
+  let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function emailBackup(service: any, to: string, xlsx: Uint8Array, summary: string): Promise<string> {
+  if (!to) return "off";
+  const key = brevoKey(); if (!key) return "failed: no Brevo key";
+  const { data: st } = await service.from("trackit_settings").select("sender_email,sender_name").eq("id", 1).single();
+  if (!st?.sender_email) return "failed: no sender email in Trackit settings";
+  const day = new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10); // Riyadh date
+  const r = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST", headers: { "api-key": key, "Content-Type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      sender: { email: st.sender_email, name: st.sender_name || "Trackit" },
+      to: [{ email: to }],
+      subject: `Trackit backup ${day}`,
+      htmlContent: `<p>Nightly Trackit backup for ${day}.</p><p>${summary.replace(/[<>&]/g, "")}</p><p>The attached file contains staff personal data (Iqama, mobile). Keep it in your company OneDrive only.</p>`,
+      attachment: [{ name: XLSX_NAME, content: b64(xlsx) }],
+    }),
+  });
+  if (!r.ok) { const t = await r.text(); let m = t.slice(0, 160); try { m = JSON.parse(t).message || m; } catch { /* keep */ } return "failed: " + m; }
+  return "sent to " + to;
 }
 
 // ---------- optional OneDrive copy (Microsoft Graph, app login made by IT) ----------
@@ -122,7 +155,7 @@ Deno.serve(async (req) => {
     const counts = Object.fromEntries(Object.entries(data).map(([t, r]) => [t, r.length]));
 
     // 2. safety: don't overwrite a good backup with badly damaged data
-    const { data: last } = await service.from("trackit_backup_status").select("last_ok_at,active_staff").eq("id", 1).single();
+    const { data: last } = await service.from("trackit_backup_status").select("last_ok_at,active_staff,email_to").eq("id", 1).single();
     if (last?.active_staff && active < last.active_staff * DROP_LIMIT && !body.force) {
       const msg = `Not saved: active staff fell from ${last.active_staff} to ${active} since the last backup (more than 20%). The previous good backup was kept. If this drop is correct, an admin can press "Back up now" and confirm.`;
       await setStatus({ ok: false, message: msg });
@@ -149,7 +182,10 @@ Deno.serve(async (req) => {
     try { od = await oneDrive([{ name: XLSX_NAME, body: xlsx, type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }, { name: JSON_NAME, body: jsonGz, type: "application/gzip" }]); }
     catch (e) { od = "failed: " + String((e as any)?.message || e).slice(0, 200); }
 
-    const msg = `${active} active staff, ${data.trackit_store_map.length} branches, ${data.trackit_staff_history.length} history rows · ${Math.round((jsonGz.length + xlsx.length) / 1024)} KB · OneDrive: ${od}`;
+    const base = `${active} active staff, ${data.trackit_store_map.length} branches, ${data.trackit_staff_history.length} history rows · ${Math.round((jsonGz.length + xlsx.length) / 1024)} KB`;
+    let em = "off";
+    try { em = await emailBackup(service, last?.email_to || "", xlsx, base); } catch (e) { em = "failed: " + String((e as any)?.message || e).slice(0, 160); }
+    const msg = `${base} · Email: ${em}${od !== "not set up yet" ? ` · OneDrive: ${od}` : ""}`;
     await setStatus({ ok: true, message: msg, last_ok_at: now.toISOString(), active_staff: active, counts, made_by: who, onedrive: od });
     return json({ ok: true, message: msg, counts });
   } catch (e) {
