@@ -468,7 +468,7 @@ async function vConfirm(id, btn){
   btn.disabled = true; btn.textContent = "Saving…";
   const row = { iqama: iq, mobile: mob, expiry: d, expiry_note: "", verified_at: new Date().toISOString() };
   let res; try { res = await sb.from("trackit_staff").update(row).eq("id", id).eq("updated_at", e.updated_at).select("id,updated_at"); } catch (err) { res = { error: { message: loginError(err) } }; }
-  if (res.error || !res.data?.length) { btn.disabled = false; btn.textContent = "Confirm"; er.textContent = res.error?.code === "23505" ? "This Iqama number is already used by another employee in Trackit. Check the number." : res.error ? res.error.message : "Someone else just changed this person. Refresh the page and try again."; return; }
+  if (res.error || !res.data?.length) { btn.disabled = false; btn.textContent = "Confirm"; if (res.error?.code === "23505") { er.innerHTML = await dupeHelp(res.error, iq, ""); return; } er.textContent = res.error ? res.error.message : "Someone else just changed this person. Refresh the page and try again."; return; }
   Object.assign(e, row, { updated_at: res.data[0].updated_at, verified_by_name: S.me.full_name || S.me.email }); delete S.drafts[id];
   const card = btn.closest(".vrow"); card.classList.add("gone"); toast(`${e.name.split(" ")[0]} verified`);
   setTimeout(() => render(), 350);
@@ -611,6 +611,39 @@ function placeOptions(curKind, curUnit){
 }
 const myPlace = () => { const k = scopeKind(); return k === "store" || k === "dept" ? [k, S.me.scope_value] : ["unassigned", ""]; };
 
+// ---------- duplicate protection ----------
+// One person must never be in Trackit twice. Before adding, look for them (also among people marked as left);
+// when the database refuses an Iqama / Employee No., say exactly who already has it and where.
+const normName = n => String(n || "").trim().replace(/\s+/g, " ").toUpperCase();
+function findExisting(row){
+  return [...S.emps, ...S.left].find(x => (row.iqama && x.iqama === row.iqama) || (row.employee_id && eid(x) === row.employee_id)
+    || (!row.iqama && !row.employee_id && normName(x.name) === normName(row.name))) || null;
+}
+function existingMsg(x){
+  return x.left_at
+    ? `<b>${esc(x.name)}</b> is already in Trackit — marked as left on ${fmtTS(x.left_at)}. Don't add them again: <button type="button" class="linkbtn" onclick="bringBack('${x.id}')">Bring ${esc(String(x.name).split(" ")[0])} back</button>`
+    : `<b>${esc(x.name)}</b> is already in Trackit at ${esc(placeOf(x))}. <button type="button" class="linkbtn" onclick="closeModal();editEmp('${x.id}')">Open their record</button>`;
+}
+async function dupeHelp(error, iqama, emp){
+  if (error?.message === "DUPLICATE_NAME") {
+    let d = {}; try { d = JSON.parse(error.details || "{}"); } catch (e) { /* ignore */ }
+    const mine = d.id && findEmp(d.id);
+    if (mine) return existingMsg(mine);
+    return `<b>${esc(d.name || "Someone with this name")}</b> is already in Trackit at ${esc(d.place || "another place")}${d.left ? " (marked as left)" : ""}. If this is the same person, use <b>Find a person</b> on the Verify page${d.left ? " or ask your admin to bring them back" : ""}. If it's a different person with the same name, enter their Iqama or Employee No.`;
+  }
+  const { data } = await sb.rpc("trackit_id_owner", { p_iqama: iqama || "", p_emp: emp || "" });
+  const o = (data || [])[0];
+  if (!o) return "That Employee No. or Iqama is already in Trackit. Check the number.";
+  const mine = o.mine && findEmp(o.id);
+  if (mine) return existingMsg(mine);
+  return `This Iqama / Employee No. already belongs to <b>${esc(o.name)}</b> at ${esc(o.place)}${o.is_left ? " (marked as left)" : ""}. If it's the same person, use <b>Find a person</b> on the Verify page${o.is_left ? " or ask your admin to bring them back" : " to move them to you"}. Otherwise check the number.`;
+}
+async function bringBack(id){
+  const { error } = await sb.from("trackit_staff").update({ left_at: null }).eq("id", id);
+  if (error) return toast(error.message);
+  closeModal(); toast("Brought back — check their details and save"); await refreshOne(id); render(); editEmp(id);
+}
+
 function editEmp(id){
   const [dk, du] = myPlace();
   const e = id ? findEmp(id) : { employee_id:"", name:"", store:"", iqama:"", nationality:"", mobile:"", expiry:"", expiry_note:"", remarks:"", card_status:"", card_photo:"", unit_kind:dk, unit:du, job_role:"", file_note:"", check_note:"", verified_at:null };
@@ -663,6 +696,7 @@ function editEmp(id){
     if (!ver && e.verified_at) row.verified_at = null;
     const moving = id && (pk !== (e.unit_kind || "unassigned") || (pu || "") !== (e.unit || ""));
     if (!id) Object.assign(row, { unit_kind: pk, unit: pu || "", store: pk === "store" ? (S.map[pu]?.branch || pu) : pk === "dept" ? pu : "" });
+    if (!id) { const x = findExisting(row); if (x) { $("#eerr").innerHTML = existingMsg(x); return; } }
     const btn = ev.submitter || $("#ef .actions .btn:not(.ghost)"); if (btn.disabled) return;
     btn.disabled = true; const label = btn.textContent; btn.textContent = "Saving…";
     let res;
@@ -676,7 +710,8 @@ function editEmp(id){
     let moveRes = null;
     if (!error && moving) ({ data: moveRes, error } = await sb.rpc("trackit_request_move", { p_id: id, p_kind: pk, p_unit: pu || "" }));
     btn.disabled = false; btn.textContent = label;
-    if (error) { $("#eerr").textContent = error.code === "23505" ? "That Employee No. or Iqama is already in Trackit — use Find a person on the Verify page to move them to you." : error.code === "42501" || /row-level security/i.test(error.message) ? "You can only add people to your own store or department." : /JWT|token/i.test(error.message) ? "Your login has expired. Sign in again." : error.message; return; }
+    if (error && error.code === "23505") { $("#eerr").innerHTML = await dupeHelp(error, row.iqama, row.employee_id); return; }
+    if (error) { $("#eerr").textContent = error.code === "42501" || /row-level security/i.test(error.message) ? "You can only add people to your own store or department." : /JWT|token/i.test(error.message) ? "Your login has expired. Sign in again." : error.message; return; }
     closeModal(); toast(moving ? (moveRes === "requested" ? `Saved — ${placeLabel(pk, pu)} must accept the move` : `Moved to ${placeLabel(pk, pu)}`) : id ? "Saved" : "Employee added");
     if (moveRes === "requested") await loadReqs(); if (id) await refreshOne(id); else await loadAll(); render();
   };
