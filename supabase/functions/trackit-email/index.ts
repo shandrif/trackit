@@ -107,8 +107,10 @@ Deno.serve(async (req) => {
     const { data: st } = await service.from("trackit_settings").select("*").eq("id", 1).single();
     if (!st) return json({ error: "Settings not found" }, 500);
 
-    if (mode === "cron") {
-      if ((req.headers.get("x-trackit-token") || "") !== st.cron_token) return json({ error: "Not allowed" }, 401);
+    // the server token (only the database knows it) may run the schedule or a test; people need an admin login
+    const tok = req.headers.get("x-trackit-token") || "";
+    if (mode === "cron" || tok) {
+      if (!st.cron_token || tok !== st.cron_token) return json({ error: "Not allowed" }, 401);
     } else {
       const token = (req.headers.get("Authorization") || "").replace("Bearer ", "");
       const { data: u } = await service.auth.getUser(token);
