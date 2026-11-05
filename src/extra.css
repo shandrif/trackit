@@ -254,3 +254,7 @@ tr.unmapped td:first-child b{color:var(--red)}
 .msg-row{cursor:pointer} .msg-row.cur{outline:2px solid #1F8F55}
 .rem-tag{display:flex;align-items:center;gap:4px;color:#1F8F55;white-space:nowrap} .rem-tag svg{width:13px;height:13px}
 @media (max-width:760px){.rem-acts{flex-wrap:wrap}.rem-acts .rem-go{max-width:none;flex-basis:100%;order:-1}.rem-acts .btn.ghost{flex:1}}
+/* Download Excel button (Employees and Alerts) */
+.xl-btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;background:#217346;color:#fff}
+.xl-btn:hover{background:#1a5c38}
+.xl-btn svg{width:16px;height:16px}

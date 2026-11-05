@@ -119,6 +119,7 @@ const ICON = {
   key:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="16" height="16"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2"/></svg>',
   phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>',
+  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
   wa:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.6z"/><path d="M9 9.5c.3 2 2.2 4.1 4.5 4.8l1.2-1.2 1.8.9c-.3 1.2-1.3 1.9-2.4 1.8C10.8 15.4 8.5 13 8.2 10c-.1-1 .6-2 1.8-2.3l.9 1.8z"/></svg>',
 };
 const VIEWS = () => [
@@ -224,10 +225,11 @@ async function pageAll(table, order){
 // everything loads at the same time — one round trip instead of several in a row
 async function loadAll(){ await Promise.all([loadCore(), loadAdmin()]); }
 async function loadCore(){
-  const [all, mp, al, mm, dp] = await Promise.all([pageAll("trackit_staff", "expiry"), sb.from("trackit_store_map").select("*").order("code"), sb.from("trackit_store_alias").select("store,code"), sb.from("trackit_map_meta").select("*").eq("id", 1).maybeSingle(), sb.from("trackit_departments").select("name").order("sort"), loadReqs()]);
+  const [all, mp, al, mm, dp] = await Promise.all([pageAll("trackit_staff", "expiry"), sb.from("trackit_store_map").select("*").order("code"), sb.from("trackit_store_alias").select("store,code"), sb.from("trackit_map_meta").select("*").eq("id", 1).maybeSingle(), sb.from("trackit_departments").select("name").order("sort"), loadReqs(), loadReminders()]);
   all.sort((a, b) => (a.expiry || "0000") < (b.expiry || "0000") ? -1 : 1);
   S.emps = all.filter(e => !e.left_at);                 // active staff: every count, list, alert and email uses these
   S.left = all.filter(e => e.left_at).sort((a, b) => a.left_at < b.left_at ? 1 : -1);
+  migrateLocalReminders();
   if (!dp.error && Array.isArray(dp.data)) S.depts = dp.data.map(d => d.name);
   if (!mp.error && Array.isArray(mp.data)) { S.map = {}; for (const m of mp.data) S.map[m.code] = m; }
   if (!al.error && Array.isArray(al.data)) { S.alias = {}; for (const x of al.data) S.alias[x.store] = x.code; }
@@ -552,7 +554,7 @@ function filterBar(){
 function employees(){
   const list = filtered(); const per = 50; const pages = Math.max(1, Math.ceil(list.length / per));
   S.page = Math.min(S.page, pages); const slice = list.slice((S.page-1)*per, S.page*per);
-  return header("Employees", scopeName() ? esc(scopeName()) : "Search, filter and update expiry dates", `<button class="btn ghost" onclick="exportCSV()">Export list</button><button class="btn" onclick="editEmp()">+ Add employee</button>`) + filterBar() + `
+  return header("Employees", scopeName() ? esc(scopeName()) : "Search, filter and update expiry dates", `<button class="btn xl-btn" onclick="downloadStaffExcel(this)">${ICON.down}<span>Download Excel</span></button><button class="btn" onclick="editEmp()">+ Add employee</button>`) + filterBar() + `
   <div class="card">${slice.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th class="hm">Store</th><th class="hm">Nationality</th><th>Baladiya expiry</th><th class="hm">Status</th><th class="hm">Card status / remarks</th><th></th></tr></thead><tbody>
     ${slice.map(e => `<tr><td><b>${esc(e.name)}</b><div class="sub mono">${esc(eid(e) || (e.iqama ? "ID …" + e.iqama.slice(-4) : ""))}<span class="sm-only"> · ${esc(placeOf(e))}</span></div>${e.left_at || e.card_status ? `<div class="sm-only-b">${e.left_at ? pill(e) + " " : ""}${csChip(e)}</div>` : ""}</td><td class="hm">${esc(placeOf(e))}${storeSub(e)}</td><td class="hm">${esc(e.nationality)}</td><td class="mono">${dateCell(e)}</td><td class="hm">${pill(e)}</td><td class="hm" style="max-width:260px">${remarksCell(e)}</td>
     <td style="white-space:nowrap;text-align:right">${contact(e)}<button class="icon-btn" title="Edit" aria-label="Edit" onclick="editEmp('${e.id}')" style="display:inline-block">${ICON.edit}</button>${isAdmin() ? `<button class="icon-btn hm" title="Delete" aria-label="Delete" onclick="delEmp('${e.id}')" style="display:inline-block">${ICON.trash}</button>` : ""}</td></tr>`).join("")}
@@ -1012,7 +1014,7 @@ function alerts(){
   const lists = { exp: by("exp"), due: by("due"), miss: by("miss") };
   const all = lists[S.alertTab], per = 50, pages = Math.max(1, Math.ceil(all.length / per));
   S.page = Math.min(S.page, pages); const list = all.slice((S.page - 1) * per, S.page * per);
-  return header("Alerts", "Who needs a Baladiya renewal", storesNeedingAction().length ? `<button class="btn wa-btn" onclick="messageStore()">${ICON.wa}<span>Send reminders</span></button>` : "") + `
+  return header("Alerts", "Who needs a Baladiya renewal", `<button class="btn xl-btn" onclick="downloadAlertsExcel(this)">${ICON.down}<span>Download Excel</span></button>` + (storesNeedingAction().length ? `<button class="btn wa-btn" onclick="messageStore()">${ICON.wa}<span>Send reminders</span></button>` : "")) + `
   <div class="tabs">${[["exp","Expired"],["due",STATUS_LABEL.due],["miss","Date missing"]].map(([k,l]) => `<button class="${S.alertTab===k?"on":""}" onclick="S.alertTab='${k}';S.page=1;render()">${l} (${lists[k].length})</button>`).join("")}</div>
   ${hasMap() && scopeKind() !== "store" && scopeKind() !== "dept" ? `<div class="filters">${["region","city","am","rom"].map(k => { const lbl = { region:"All regions", city:"All cities", am:"All area managers", rom:"All ROMs" }[k]; const s = new Set(S.emps.map(e => GROUPS[k][1](e)).filter(Boolean)); return `<select aria-label="${lbl}" onchange="S.filters.${k}=this.value;S.page=1;render()"><option value="">${lbl}</option>${[...s].sort().map(v => `<option value="${esc(v)}" ${S.filters[k]===v?"selected":""}>${esc(v)}</option>`).join("")}</select>`; }).join("")}</div>` : ""}
   ${(n => n ? `<div class="warnbox" style="cursor:pointer" onclick="go('verify')">${n.toLocaleString()} ${n === 1 ? "person isn't" : "people aren't"} verified on Balady yet, so ${n === 1 ? "they're" : "they're"} not in these alerts. <b>Go to Verify →</b></div>` : "")(S.emps.filter(e => !e.verified_at && inArea(e)).length)}
@@ -1029,19 +1031,42 @@ function storesNeedingAction(){
   return Object.entries(c).sort((x, y) => y[1] - x[1]);
 }
 // Free WhatsApp reminders: WhatsApp opens with the message already written, the manager taps Send,
-// comes back, and the next person is ready. Who was reminded is remembered on this device only.
+// comes back, and the next person is ready. Who was reminded is saved in the database, so every login
+// that can see the person (and the Excel downloads) shows the same "Reminded" date.
 const REMIND_KEY = "trackit-reminded", REMIND_GAP = 7;
-S.sent = new Set(); S.msgStore = ""; S.msgSkip = true; S.msgCur = null;
-function remindedMap(){ try { const m = JSON.parse(localStorage.getItem(REMIND_KEY) || "{}"); return m && typeof m === "object" ? m : {}; } catch (e) { return {}; } }
+S.sent = new Set(); S.msgStore = ""; S.msgSkip = true; S.msgCur = null; S.rem = {};
+function remindedMap(){ return S.rem; }
+async function loadReminders(){
+  const since = new Date(todayUTC() - 120 * 86400000).toISOString().slice(0, 10), m = {};
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb.from("trackit_reminders").select("staff_id,reminded_on").gte("reminded_on", since).range(from, from + 999);
+    if (error) return; // keep what we had
+    for (const r of data || []) m[r.staff_id] = r.reminded_on;
+    if (!data || data.length < 1000) break;
+  }
+  S.rem = m;
+}
+// one-time move of reminders that were saved on this device before they went to the database
+async function migrateLocalReminders(){
+  const m = S.rem;
+  let old = null; try { old = JSON.parse(localStorage.getItem(REMIND_KEY) || "null"); } catch (e) { /* ignore */ }
+  if (old && typeof old === "object") {
+    const ids = new Set([...S.emps, ...S.left].map(e => e.id));
+    const rows = Object.entries(old).filter(([id, d]) => ids.has(id) && /^\d{4}-\d{2}-\d{2}$/.test(d) && (!m[id] || m[id] < d))
+      .map(([id, d]) => ({ staff_id: id, reminded_on: d, reminded_by: S.me.id, reminded_by_name: S.me.full_name || S.me.email, updated_at: new Date().toISOString() }));
+    const res = rows.length ? await sb.from("trackit_reminders").upsert(rows) : { error: null };
+    if (!res.error) { for (const r of rows) m[r.staff_id] = r.reminded_on; try { localStorage.removeItem(REMIND_KEY); } catch (e) { /* ignore */ } }
+  }
+}
 function remindedAgo(e){ const d = remindedMap()[e.id]; if (!d) return null; const n = Math.floor((todayUTC() - Date.parse(d)) / 86400000); return n >= 0 ? n : null; }
 function agoText(n){ return n === 0 ? "today" : n === 1 ? "yesterday" : `${n} days ago`; }
 function remindedTag(e){ const n = remindedAgo(e); return n !== null && n <= 30 ? `<div class="sub rem-tag">${ICON.wa}Reminded ${agoText(n)}</div>` : ""; }
 function noteReminded(id){
   S.sent.add(id);
-  const m = remindedMap(), n = new Date(), keep = todayUTC() - 90 * 86400000;
-  m[id] = new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())).toISOString().slice(0, 10);
-  for (const k of Object.keys(m)) if (Date.parse(m[k]) < keep) delete m[k];
-  try { localStorage.setItem(REMIND_KEY, JSON.stringify(m)); } catch (e) { /* storage blocked: remembered for this visit only */ }
+  const n = new Date(), d = new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())).toISOString().slice(0, 10);
+  S.rem[id] = d;
+  sb.from("trackit_reminders").upsert({ staff_id: id, reminded_on: d, reminded_by: S.me.id, reminded_by_name: S.me.full_name || S.me.email, updated_at: new Date().toISOString() })
+    .then(({ error }) => { if (error) console.warn("reminder not saved", error.message); });
 }
 function remindQueue(){
   const order = { exp:0, due:1, miss:2, ok:3, unv:4 };

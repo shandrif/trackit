@@ -33,6 +33,7 @@ const TABLES: Record<string, string | null> = {
   trackit_departments: null,
   trackit_profiles: "id,email,full_name,role,scope_kind,scope_value,created_at", // no passwords anywhere
   trackit_move_requests: null,
+  trackit_reminders: null,
   trackit_week_totals: null,
   trackit_map_meta: null,
   trackit_settings: "id,email_enabled,recipients,sender_email,sender_name,frequency,weekday,send_hour,last_sent,last_result", // no cron token
