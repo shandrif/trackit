@@ -435,7 +435,6 @@ function vRow(e){
       <div class="vin"><label>Mobile</label><input type="text" id="vm-${e.id}" inputmode="tel" maxlength="14" value="${esc(dr(e, "vm", e.mobile))}" placeholder="5XXXXXXXX" oninput="keep(this)"></div>
       <div class="vin"><label>Expiry on Balady</label><input type="date" id="vd-${e.id}" value="${esc(dr(e, "vd", e.expiry))}" onchange="keep(this)"></div>
       <div class="vin"><label>or Hijri</label>${hijriBox(`vd-${e.id}`, `vh-${e.id}`, dr(e, "vh", ""))}</div>
-      <label class="chk sm"><input type="checkbox" id="vn-${e.id}" ${dr(e, "vn", "") ? "checked" : ""} onchange="keep(this);if(this.checked){$('#vd-${e.id}').value='';keep($('#vd-${e.id}'))}"> Not on Balady / no card</label>
       <div class="err" id="ve-${e.id}"></div>
       <div class="vbtns"><button class="btn" onclick="vConfirm('${e.id}', this)">Confirm</button>
         <button class="btn ghost sm" onclick="editEmp('${e.id}')">Edit</button>
@@ -456,14 +455,14 @@ function copyIqama(id){
 function copyTxt(t){ try { navigator.clipboard.writeText(t).then(() => toast("ID copied — paste it on the Balady website"), () => toast(t)); } catch (e) { toast(t); } }
 async function vConfirm(id, btn){
   const e = findEmp(id); if (!e || btn.disabled) return;
-  const d = $(`#vd-${id}`).value, none = $(`#vn-${id}`).checked, er = $(`#ve-${id}`); er.textContent = "";
+  const d = $(`#vd-${id}`).value, er = $(`#ve-${id}`); er.textContent = "";
   const iq = $(`#vi-${id}`).value.replace(/[٠-٩]/g, x => "٠١٢٣٤٥٦٧٨٩".indexOf(x)).replace(/\D/g, ""), mob = normMobile($(`#vm-${id}`).value.replace(/[٠-٩]/g, x => "٠١٢٣٤٥٦٧٨٩".indexOf(x)));
   if (!/^[12]\d{9}$/.test(iq)) { er.textContent = "Iqama / National ID must be 10 digits, starting with 1 or 2."; $(`#vi-${id}`).focus(); return; }
   if (!/^5\d{8}$/.test(mob)) { er.textContent = "Mobile must be 9 digits starting with 5 (e.g. 5XXXXXXXX)."; $(`#vm-${id}`).focus(); return; }
-  if (!d && !none) { er.textContent = "Enter the expiry date from Balady, or tick “Not on Balady”."; return; }
+  if (!d) { er.textContent = "Enter the expiry date shown on the health-certificate website (Gregorian or Hijri)."; return; }
   if (d && (d < "2015-01-01" || d > "2040-12-31")) { er.textContent = "That date doesn't look right. Check the year."; return; }
   btn.disabled = true; btn.textContent = "Saving…";
-  const row = { iqama: iq, mobile: mob, expiry: none ? null : d, expiry_note: none ? "Not on Balady" : "", verified_at: new Date().toISOString() };
+  const row = { iqama: iq, mobile: mob, expiry: d, expiry_note: "", verified_at: new Date().toISOString() };
   let res; try { res = await sb.from("trackit_staff").update(row).eq("id", id).eq("updated_at", e.updated_at).select("id,updated_at"); } catch (err) { res = { error: { message: loginError(err) } }; }
   if (res.error || !res.data?.length) { btn.disabled = false; btn.textContent = "Confirm"; er.textContent = res.error?.code === "23505" ? "This Iqama number is already used by another employee in Trackit. Check the number." : res.error ? res.error.message : "Someone else just changed this person. Refresh the page and try again."; return; }
   Object.assign(e, row, { updated_at: res.data[0].updated_at, verified_by_name: S.me.full_name || S.me.email }); delete S.drafts[id];
