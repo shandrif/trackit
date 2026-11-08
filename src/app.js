@@ -1354,7 +1354,8 @@ function addLogin(){
   modal(`<h3>Add user</h3><form id="lf">
     <label>Full name</label><input type="text" name="full_name" required>
     <label>Email</label><input type="email" name="email" required>
-    <label>Starting password (min 8 characters)</label><input type="text" name="password" required minlength="8" autocomplete="off">
+    <label>Starting password (min 8 characters)</label><div style="display:flex;gap:8px"><input type="text" name="password" required minlength="8" autocomplete="off" style="flex:1"><button type="button" class="btn ghost" onclick="this.previousElementSibling.value=genPw()">Generate</button></div>
+    <p class="note" style="margin-top:4px">Store and department logins are added to <b>Download logins (Excel)</b>.</p>
     ${accessFields("manager", "store", "")}
     <div class="err" id="lerr2"></div>
     <div class="actions"><button type="button" class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" id="lbtn2">Create login</button></div></form>`);

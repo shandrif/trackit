@@ -49,6 +49,12 @@ Deno.serve(async (req) => {
     if (action === "create") {
       const acc = await checkAccess(body); if (typeof acc === "string") return json({ error: acc }, 400);
       const err = await createOne(body, acc); if (err) return json({ error: err }, 400);
+      // store and department logins also go into the admin's downloadable login list
+      if (acc.scope_kind === "store" || acc.scope_kind === "dept") {
+        const em = String(body.email).trim().toLowerCase();
+        const { data: p } = await service.from("trackit_profiles").select("id").eq("email", em).maybeSingle();
+        if (p) await service.from("trackit_login_creds").upsert({ profile_id: p.id, login: em, password: String(body.password), updated_at: new Date().toISOString() });
+      }
       return json({ ok: true });
     }
 
