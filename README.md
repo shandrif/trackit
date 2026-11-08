@@ -9,7 +9,7 @@ Status: **Expired** (date passed), **Due ≤ 30 days**, **OK**.
 
 ## How it works
 
-- Single page: `index.html` (no build step), hosted on GitHub Pages.
+- Single page: `index.html`, assembled by `sh build.sh` from `base.html` and `src/` (it also writes the alert email's report module). Hosted on GitHub Pages: every push to `main` is published automatically at trackit.hmreport.com.
 - Data, logins and live updates: Supabase project `hm-fieldnote` (tables `trackit_profiles`, `trackit_employees`; row-level security keeps each manager to their own staff).
 - Bulk import: `trackit_import` database function matches rows on **Employee ID** (new → added, changed → updated, same → skipped).
 - AI assistant: Supabase Edge Function `trackit-ask` calls Google Gemini (free tier). It never receives Iqama or mobile numbers. The key is stored as the `GEMINI_API_KEY` secret in Supabase, never in this code.
