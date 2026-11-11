@@ -1894,7 +1894,7 @@ function mappingCard(){
   const branches = Object.values(S.map).sort((x, y) => x.branch.localeCompare(y.branch));
   const synced = S.mapMeta?.synced_at ? fmtTS(S.mapMeta.synced_at) : "not yet";
   return `<div class="card pad section" id="mapCard"><h3>Branches</h3>
-    <p class="note">Area manager and ROM come from the Span of Control file every Sunday (last sync: <b>${synced}</b>, ${branches.length} branches). Staff are linked to a branch by store code. City and region are kept here — correct them below and the sync won't overwrite them. Departments have no area manager and show under their own name.</p>
+    <p class="note">Area manager and ROM are synced from the <b>Span of Control</b> file, and city and region from the <b>Master Location Mapping</b>, every Sunday at 7:00 AM (last sync: <b>${synced}</b>, ${branches.length} branches). To change them, update those files — edits made here are replaced at the next sync. Staff are linked to a branch by store code. Departments have no area manager and show under their own name.</p>${S.mapMeta?.notes ? `<p class="note"><b>From the last sync:</b> ${esc(S.mapMeta.notes)}</p>` : ""}
     <details class="map-sec"><summary>Branches — city and region (${branches.length})</summary>
       <div class="tbl-wrap"><table><thead><tr><th>Branch</th><th class="hm">Area manager</th><th>City</th><th>Region</th></tr></thead><tbody>
       ${branches.map(b => `<tr><td><b>${esc(b.branch)}</b><div class="sub mono">${esc(b.code)} · ${esc(b.rom)}</div></td><td class="hm">${esc(b.area_manager)}</td>
